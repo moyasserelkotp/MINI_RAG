@@ -1,0 +1,62 @@
+{
+  "info": {
+    "_postman_id": "5ad43bbe-9f72-4e7a-8f0a-3164d23fc4f3",
+    "name": "tourism_min_rag",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "28156294",
+    "_collection_link": "https://trend9.postman.co/workspace/4960f66f-9734-49f2-bb11-73aad411e6b8/collection/28156294-5ad43bbe-9f72-4e7a-8f0a-3164d23fc4f3?action=share&source=collection_link&creator=28156294"
+  },
+  "item": [
+    {
+      "name": "app_name",
+      "id": "df010714-73de-4faa-a9dc-7752052391a2",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/app_name",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "app_name"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "id": "17810a00-633f-4e94-9f4a-2fd913e50727",
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "id": "a5d42fcd-7257-4d33-acaf-c27ae1f59531",
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "id": "84366119-6883-49b1-803f-781add152c05",
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    }
+  ]
+}

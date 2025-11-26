@@ -1,0 +1,14 @@
+{
+  "workspace": {
+    "id": "4960f66f-9734-49f2-bb11-73aad411e6b8"
+  },
+  "entities": {
+    "collections": [
+      "..\\postman\\collections\\tourism_min_rag.postman_collection.json"
+    ],
+    "environments": [],
+    "specs": [],
+    "flows": [],
+    "globals": []
+  }
+}
