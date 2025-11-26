@@ -1,9 +1,10 @@
 from fastapi import FastAPI
+from dotenv import load_dotenv
+load_dotenv(".env")
+
+from routes.base import base_router 
 
 
 app = FastAPI()
 
-
-@app.get("/app_name")
-async def get_app_name():
-    return {"app_name": "MINI-TOURISM_RAG"}
+app.include_router(base_router)
