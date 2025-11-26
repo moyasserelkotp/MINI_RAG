@@ -3,6 +3,7 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/")
-async def read_root():
-    return {"Hello": "World"}
+
+@app.get("/app_name")
+async def get_app_name():
+    return {"app_name": "MINI-TOURISM_RAG"}
