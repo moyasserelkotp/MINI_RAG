@@ -12,11 +12,9 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: Optional[str] = ""
 
-    # allow either a list or a comma‑separated string so that dotenv parsing
-    # doesn't attempt JSON decoding (which fails on unquoted comma lists).
     FILE_ALLOWED_TYPES: Union[List[str], str] = []
     FILE_MAX_SIZE: int = 0
-    FILE_DEFAULT_CHUNK_SIZE: int = 512_000  # 512KB
+    FILE_DEFAULT_CHUNK_SIZE: int = 512_000  
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -26,18 +24,19 @@ class Settings(BaseSettings):
             value = v.strip()
             if not value:
                 return []
-            # try JSON first to support explicit arrays
             try:
                 decoded = json.loads(value)
                 if isinstance(decoded, list):
                     return [item.strip().lower() for item in decoded if isinstance(item, str)]
             except json.JSONDecodeError:
                 pass
-            # fall back to comma-separated
             return [item.strip().lower() for item in value.split(",") if item.strip()]
         if isinstance(v, list):
             return [item.strip().lower() for item in v if isinstance(item, str)]
         return v
+
+    MONGODB_URL: str
+    MONGODB_DATABASE: str
 
 
 def get_settings():

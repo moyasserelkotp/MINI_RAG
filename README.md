@@ -1,4 +1,4 @@
-# mini-rag
+# mini-rag-app
 
 This is a minimal implementation of the RAG model for question answering.
 
@@ -63,6 +63,11 @@ The important variables are:
 
 You can add or remove allowed formats simply by editing `FILE_ALLOWED_TYPES`.
 
+## Run Docker Compose Services
+```bash
+$ cd docker
+$ docker-compose up -d
+```
 
 ## Run the FastAPI server
 
