@@ -4,6 +4,9 @@ from enum import Enum
 class LLMEnums(Enum):
     OPENAI = "OPENAI"
     COHERE = "COHERE"
+    HUGGINGFACE = "HUGGINGFACE"
+    LLAMA = "LLAMA"
+    GEMINI = "GEMINI"
 
 
 class OpenAIEnums(Enum):
