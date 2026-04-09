@@ -1,4 +1,5 @@
 from ..LLMInterface import LLMInterface
+from ..LLMEnums import GenericLLMEnums
 from transformers import pipeline, AutoTokenizer, AutoModel
 import torch
 import logging
@@ -29,6 +30,10 @@ class HuggingFaceProvider(LLMInterface):
         self.embedding_tokenizer = None
 
         self.logger = logging.getLogger(__name__)
+
+    @property
+    def enums(self):
+        return GenericLLMEnums
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id

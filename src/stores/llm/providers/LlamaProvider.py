@@ -1,4 +1,5 @@
 from ..LLMInterface import LLMInterface
+from ..LLMEnums import GenericLLMEnums
 import ollama
 import logging
 
@@ -29,6 +30,10 @@ class LlamaProvider(LLMInterface):
         self.client = ollama.Client(host=api_url) if api_url else ollama.Client()
 
         self.logger = logging.getLogger(__name__)
+
+    @property
+    def enums(self):
+        return GenericLLMEnums
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id

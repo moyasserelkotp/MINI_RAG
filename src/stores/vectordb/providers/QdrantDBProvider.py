@@ -3,6 +3,7 @@ from ..VectorDBInterface import VectorDBInterface
 from ..VectorDBEnums import DistanceMethodEnums
 import logging
 from typing import List
+import hashlib
 
 
 class QdrantDBProvider(VectorDBInterface):
@@ -101,7 +102,10 @@ class QdrantDBProvider(VectorDBInterface):
             metadata = [None] * len(texts)
 
         if record_ids is None:
-            record_ids = [None] * len(texts)
+            record_ids = [
+                int(hashlib.md5(f"{i}_{text}".encode()).hexdigest(), 16) % (2**63 - 1)
+                for i, text in enumerate(texts)
+            ]
 
         for i in range(0, len(texts), batch_size):
             batch_end = i + batch_size
@@ -109,9 +113,11 @@ class QdrantDBProvider(VectorDBInterface):
             batch_texts = texts[i:batch_end]
             batch_vectors = vectors[i:batch_end]
             batch_metadata = metadata[i:batch_end]
+            batch_record_ids = record_ids[i:batch_end]
 
             batch_records = [
                 models.Record(
+                    id=batch_record_ids[x],
                     vector=batch_vectors[x],
                     payload={"text": batch_texts[x], "metadata": batch_metadata[x]},
                 )

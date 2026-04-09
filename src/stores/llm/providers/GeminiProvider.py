@@ -1,4 +1,5 @@
 from ..LLMInterface import LLMInterface
+from ..LLMEnums import GenericLLMEnums
 import google.generativeai as genai
 import logging
 
@@ -31,6 +32,10 @@ class GeminiProvider(LLMInterface):
         except Exception as e:
             self.logger = logging.getLogger(__name__)
             self.logger.error(f"Failed to configure Gemini client: {e}")
+
+    @property
+    def enums(self):
+        return GenericLLMEnums
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id

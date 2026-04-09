@@ -40,6 +40,10 @@ class OpenAIProvider(LLMInterface):
 
         self.logger = logging.getLogger(__name__)
 
+    @property
+    def enums(self):
+        return OpenAIEnums
+
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id
 

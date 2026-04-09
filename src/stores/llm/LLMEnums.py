@@ -24,6 +24,12 @@ class CoHereEnums(Enum):
     QUERY = "search_query"
 
 
+class GenericLLMEnums(Enum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 class DocumentTypeEnum(Enum):
     DOCUMENT = "document"
     QUERY = "query"

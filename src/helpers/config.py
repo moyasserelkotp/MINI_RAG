@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     VECTOR_DB_PATH : str
     VECTOR_DB_DISTANCE_METHOD: str = None
 
+    PRIMARY_LANG: str = "en"
+    DEFAULT_LANG: str = "en"
 
 
 def get_settings():

@@ -38,13 +38,7 @@ class ProcessController(BaseController):
         return None
 
     def get_file_content(self, file_id: str):
-        """Attempt to load the file from disk.
-
-        Returns a list of Document records on success, ``None`` if the file
-        could not be found or the extension is unsupported.  The calling route
-        is responsible for converting the return value into an HTTP response
-        so the API doesn't raise a 500 when a bad project/file id is used.
-        """
+        """Attempt to load the file from disk."""
         file_path = os.path.join(self.project_path, file_id)
 
         if not os.path.isfile(file_path):
@@ -53,14 +47,11 @@ class ProcessController(BaseController):
 
         loader = self.get_file_loader(file_id=file_id)
         if loader is None:
-            # unsupported extension
             return None
 
         try:
             return loader.load()
         except Exception:
-            # propagate upwards so caller can log/handle; returning None
-            # would also trigger a PROCESSING_FAILED response.
             raise
 
     def process_file_content(self, file_content: list, file_id: str,
