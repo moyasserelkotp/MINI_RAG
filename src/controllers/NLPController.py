@@ -204,11 +204,11 @@ class NLPController(BaseController):
         # None = infrastructure failure; [] = no results (threshold too strict or empty index)
         if retrieved_documents is None:
             logger.error("Search failed (infrastructure error) for query: %s", query)
-            return answer, full_prompt, chat_history
+            return False, None, None  # False denotes infrastructure error
 
         if len(retrieved_documents) == 0:
             logger.warning("No documents above threshold for query: %s", query)
-            return answer, full_prompt, chat_history
+            return None, None, None  # None denotes 0 documents found
 
         # Step 2: Build document prompts with source metadata
         system_prompt = self.template_parser.get("rag", "system_prompt")

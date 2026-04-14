@@ -2,9 +2,34 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import GenericLLMEnums
 import ollama
 import logging
+import os
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
+
+def _get_default_ollama_host() -> str:
+    """Intelligently detects if running in WSL to route localhost to Windows."""
+    # 1. Respect explicitly set environment variable if user added one
+    env_host = os.environ.get("OLLAMA_HOST")
+    if env_host:
+        return env_host
+
+    # 2. Detect WSL Linux subsystem
+    try:
+        with open("/proc/version", "r") as f:
+            if "microsoft" in f.read().lower():
+                with open("/etc/resolv.conf", "r") as r:
+                    for line in r:
+                        if line.startswith("nameserver"):
+                            ip = line.split()[1].strip()
+                            logger.info(f"Detected WSL environment. Routing Ollama host to {ip}")
+                            return f"http://{ip}:11434"
+    except Exception:
+        pass
+
+    # 3. Default local IPv4 (better than 'localhost' on Windows for httpx to avoid IPv6 issues)
+    return "http://127.0.0.1:11434"
+
 
 
 class LlamaProvider(LLMInterface):
@@ -12,7 +37,7 @@ class LlamaProvider(LLMInterface):
     def __init__(
         self,
         api_key: str = None,
-        api_url: str = "http://localhost:11434",
+        api_url: str = "http://localhost:11434/",
         default_input_max_characters: int = 1024,
         default_generation_max_output_tokens: int = 512,
         default_generation_temperature: float = 0.1,
@@ -29,9 +54,12 @@ class LlamaProvider(LLMInterface):
         self.embedding_size = None
 
         try:
-            self.client = ollama.Client(host=api_url) if api_url else ollama.Client()
+            # Dynamically determine the best host string and pass it to Client
+            host_url = _get_default_ollama_host()
+            self.client = ollama.Client(host=host_url)
         except Exception as e:
-            logger.error("Failed to initialize Ollama client: %s", e)
+            msg = "Llama client was not initialized"
+            logger.error(f"{msg}: {e}")
             self.client = None
 
     @property
@@ -56,11 +84,13 @@ class LlamaProvider(LLMInterface):
         temperature: float = None,
     ):
         if not self.generation_model_id:
-            logger.error("Generation model for Llama was not set")
-            return None
+            msg = "Generation model for Llama was not set"
+            logger.error(msg)
+            return msg
         if not self.client:
-            logger.error("Llama client was not initialized")
-            return None
+            msg = "Llama client was not initialized"
+            logger.error(msg)
+            return msg
 
         temperature = temperature or self.default_generation_temperature
         num_predict = max_output_tokens or self.default_generation_max_output_tokens
@@ -81,12 +111,14 @@ class LlamaProvider(LLMInterface):
             if not text_out and isinstance(response, dict):
                 text_out = response.get("response")
             if not text_out:
-                logger.error("Empty response from Llama generate")
-                return None
+                msg = "Empty response from Llama generate"
+                logger.error(msg)
+                return msg
             return text_out
         except Exception as e:
-            logger.error("Llama generate_text error: %s", e)
-            return None
+            msg = f"Llama generate_text error: {str(e)}"
+            logger.error(msg)
+            return msg
 
     def embed_text(self, text: str, document_type: str = None) -> Optional[List[float]]:
         if not self.embedding_model_id:

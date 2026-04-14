@@ -187,6 +187,13 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
         score_threshold=search_request.score_threshold,
     )
 
+    if answer is False:
+        # Search infra failed completely (e.g. Qdrant is down)
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "Search infrastructure failed"},
+        )
+
     if answer is None and full_prompt is None:
         # Both being None means the search itself failed (embed/infra error)
         return JSONResponse(
@@ -194,7 +201,7 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
             content={"signal": ResponseSignal.RAG_ANSWER_ERROR.value},
         )
 
-    if not answer:
+    if not answer and full_prompt is None:
         # Search returned 0 results above threshold — not a server error
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -203,6 +210,25 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
                 "answer": "No relevant documents found for your query. Please try a different question or lower the score threshold.",
                 "full_prompt": None,
                 "chat_history": None,
+            },
+        )
+
+    if answer is None and full_prompt is not None:
+        # Search worked, found docs, BUT the LLM returned None
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "signal": ResponseSignal.RAG_ANSWER_ERROR.value, 
+                "error": "LLM generation failed."
+            },
+        )
+
+    if isinstance(answer, str) and ("error:" in answer.lower() or "not initialized" in answer or "was not set" in answer):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "signal": ResponseSignal.RAG_ANSWER_ERROR.value, 
+                "error": answer
             },
         )
 
