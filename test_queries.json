@@ -105,7 +105,7 @@
     },
     {
       "name": "10. Re-process Data",
-      "endpoint": "/api/v1/data/process/project1",
+      "endpoint": "/api/v1/data/process-all/project1",
       "method": "POST",
       "body": {
         "chunk_size": 512,

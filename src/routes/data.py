@@ -22,10 +22,8 @@ data_router = APIRouter(
     tags=["api_v1/data"],
 )
 
-# ================================
-# Upload File
-# ================================
 
+# ── Upload ────────────────────────────────────────────────────────────────────
 
 @data_router.post("/upload/{project_id}")
 async def upload_data(
@@ -34,12 +32,10 @@ async def upload_data(
     file: UploadFile,
     app_settings: Settings = Depends(get_settings),
 ):
-
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     data_controller = DataController()
-
     is_valid, result_signal = data_controller.validate_uploaded_file(file=file)
 
     if not is_valid:
@@ -47,8 +43,6 @@ async def upload_data(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"signal": result_signal},
         )
-
-    project_dir_path = ProjectController().get_project_path(project_id=project_id)
 
     file_path, file_id = data_controller.generate_unique_filepath(
         orig_file_name=file.filename,
@@ -59,25 +53,20 @@ async def upload_data(
         async with aiofiles.open(file_path, "wb") as f:
             while chunk := await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
                 await f.write(chunk)
-
     except Exception as e:
-
-        logger.error(f"Error while uploading file: {e}")
-
+        logger.error("Error while uploading file: %s", e)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"signal": ResponseSignal.FILE_UPLOAD_FAILED.value},
         )
 
     asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
-
     asset_resource = Asset(
         asset_project_id=project.id,
         asset_type=AssetTypeEnum.FILE.value,
         asset_name=file_id,
         asset_size=os.path.getsize(file_path),
     )
-
     asset_record = await asset_model.create_asset(asset=asset_resource)
 
     return JSONResponse(
@@ -89,10 +78,7 @@ async def upload_data(
     )
 
 
-# =========================================
-# Core Processing Logic
-# =========================================
-
+# ── Core processing logic (shared) ───────────────────────────────────────────
 
 async def _process_project_files(
     request: Request,
@@ -103,12 +89,10 @@ async def _process_project_files(
     overlap_size: int,
     do_reset: int,
 ):
-
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
-
     project_files_ids: dict = {}
 
     if file_id:
@@ -117,13 +101,11 @@ async def _process_project_files(
             asset_name=file_id,
             asset_type=AssetTypeEnum.FILE.value,
         )
-
         if asset_record is None:
             return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_404_NOT_FOUND,
                 content={"signal": ResponseSignal.FILE_ID_ERROR.value},
             )
-
         project_files_ids = {asset_record.id: asset_record.asset_name}
 
     else:
@@ -131,45 +113,31 @@ async def _process_project_files(
             asset_project_id=project.id,
             asset_type=AssetTypeEnum.FILE.value,
         )
-
         project_files_ids = {record.id: record.asset_name for record in project_files}
 
-        # Also scan the project directory for files not in the database
-        project_path = ProjectController().get_project_path(project_id=project_id)
-        if os.path.exists(project_path):
-            disk_files = os.listdir(project_path)
-            registered_files = {asset_name for asset_name in project_files_ids.values()}
-
-            # Add unregistered files with a temporary ID
-            for file_name in disk_files:
-                if file_name not in registered_files and os.path.isfile(
-                    os.path.join(project_path, file_name)
-                ):
-                    # Use file_name as ID for unregistered files
-                    project_files_ids[file_name] = file_name
-
-    if len(project_files_ids) == 0:
+    if not project_files_ids:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"signal": ResponseSignal.NO_FILES_ERROR.value},
         )
 
     process_controller = ProcessController(project_id=project_id)
-
     chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
 
     no_records = 0
     no_files = 0
+    failed_files = []
 
     if do_reset == 1:
         await chunk_model.delete_chunks_by_project_id(project_id=project.id)
 
     for asset_id, asset_file_id in project_files_ids.items():
-
         file_content = process_controller.get_file_content(file_id=asset_file_id)
 
         if file_content is None:
-            logger.error(f"Error while processing file: {asset_file_id}")
+            logger.error("Could not load file content for: %s", asset_file_id)
+            failed_files.append(asset_file_id)
+            # Bug fix: continue instead of aborting the whole request
             continue
 
         file_chunks = process_controller.process_file_content(
@@ -180,10 +148,10 @@ async def _process_project_files(
         )
 
         if not file_chunks:
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={"signal": ResponseSignal.PROCESSING_FAILED.value},
-            )
+            logger.error("No chunks produced for file: %s", asset_file_id)
+            failed_files.append(asset_file_id)
+            # Bug fix: continue instead of returning 400 on first failure
+            continue
 
         file_chunks_records = [
             DataChunk(
@@ -191,28 +159,34 @@ async def _process_project_files(
                 chunk_metadata=chunk.metadata,
                 chunk_order=i + 1,
                 chunk_project_id=project.id,
-                chunk_asset_id=asset_id,
+                chunk_asset_id=asset_id if not isinstance(asset_id, str) else None,
             )
             for i, chunk in enumerate(file_chunks)
         ]
 
         no_records += await chunk_model.insert_many_chunks(chunks=file_chunks_records)
-
         no_files += 1
+
+    if no_files == 0:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "signal": ResponseSignal.PROCESSING_FAILED.value,
+                "failed_files": failed_files,
+            },
+        )
 
     return JSONResponse(
         content={
             "signal": ResponseSignal.PROCESSING_SUCCESS.value,
             "inserted_chunks": no_records,
             "processed_files": no_files,
+            "failed_files": failed_files,
         }
     )
 
 
-# =========================================
-# API 1 — Process Single File
-# =========================================
-
+# ── Process single file ───────────────────────────────────────────────────────
 
 @data_router.post("/process-file/{project_id}")
 async def process_single_file(
@@ -220,11 +194,10 @@ async def process_single_file(
     project_id: str,
     process_request: ProcessRequest,
 ):
-
     if not process_request.file_id:
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "file_id is required"},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"error": "file_id is required for process-file endpoint"},
         )
 
     return await _process_project_files(
@@ -237,10 +210,7 @@ async def process_single_file(
     )
 
 
-# =========================================
-# API 2 — Process All Files
-# =========================================
-
+# ── Process all files ─────────────────────────────────────────────────────────
 
 @data_router.post("/process-all/{project_id}")
 async def process_all_files(
@@ -248,7 +218,6 @@ async def process_all_files(
     project_id: str,
     process_request: ProcessRequest,
 ):
-
     return await _process_project_files(
         request,
         project_id,

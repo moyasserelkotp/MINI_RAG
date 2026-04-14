@@ -2,6 +2,9 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import GenericLLMEnums
 import ollama
 import logging
+from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class LlamaProvider(LLMInterface):
@@ -10,11 +13,10 @@ class LlamaProvider(LLMInterface):
         self,
         api_key: str = None,
         api_url: str = "http://localhost:11434",
-        default_input_max_characters: int = 1000,
-        default_generation_max_output_tokens: int = 1000,
+        default_input_max_characters: int = 1024,
+        default_generation_max_output_tokens: int = 512,
         default_generation_temperature: float = 0.1,
     ):
-
         self.api_key = api_key
         self.api_url = api_url
 
@@ -26,10 +28,11 @@ class LlamaProvider(LLMInterface):
         self.embedding_model_id = None
         self.embedding_size = None
 
-        # Initialize Ollama client
-        self.client = ollama.Client(host=api_url) if api_url else ollama.Client()
-
-        self.logger = logging.getLogger(__name__)
+        try:
+            self.client = ollama.Client(host=api_url) if api_url else ollama.Client()
+        except Exception as e:
+            logger.error("Failed to initialize Ollama client: %s", e)
+            self.client = None
 
     @property
     def enums(self):
@@ -37,14 +40,12 @@ class LlamaProvider(LLMInterface):
 
     def set_generation_model(self, model_id: str):
         self.generation_model_id = model_id
-        self.logger.info(f"Set Llama generation model: {model_id}")
 
     def set_embedding_model(self, model_id: str, embedding_size: int):
         self.embedding_model_id = model_id
         self.embedding_size = embedding_size
-        self.logger.info(f"Set Llama embedding model: {model_id}")
 
-    def process_text(self, text: str):
+    def process_text(self, text: str) -> str:
         return text[: self.default_input_max_characters].strip()
 
     def generate_text(
@@ -54,66 +55,64 @@ class LlamaProvider(LLMInterface):
         max_output_tokens: int = None,
         temperature: float = None,
     ):
-
         if not self.generation_model_id:
-            self.logger.error("Generation model for Llama was not set")
+            logger.error("Generation model for Llama was not set")
             return None
-
         if not self.client:
-            self.logger.error("Llama client was not initialized")
+            logger.error("Llama client was not initialized")
             return None
 
-        temperature = (
-            temperature if temperature else self.default_generation_temperature
-        )
+        temperature = temperature or self.default_generation_temperature
+        num_predict = max_output_tokens or self.default_generation_max_output_tokens
 
         try:
             response = self.client.generate(
                 model=self.generation_model_id,
                 prompt=self.process_text(prompt),
-                temperature=temperature,
-                num_predict=max_output_tokens or self.default_generation_max_output_tokens,
-                stream=False
+                options={
+                    "temperature": temperature,
+                    "num_predict": num_predict,
+                },
+                stream=False,
             )
-
-            if not response or not response.get("response"):
-                self.logger.error("Error while generating text with Llama")
+            # Bug fix: Ollama returns a dataclass object, not a dict
+            # Use attribute access; fall back gracefully
+            text_out = getattr(response, "response", None)
+            if not text_out and isinstance(response, dict):
+                text_out = response.get("response")
+            if not text_out:
+                logger.error("Empty response from Llama generate")
                 return None
-
-            return response["response"]
-
+            return text_out
         except Exception as e:
-            self.logger.error(f"Error while generating text with Llama: {e}")
+            logger.error("Llama generate_text error: %s", e)
             return None
 
-    def embed_text(self, text: str, document_type: str = None):
-
+    def embed_text(self, text: str, document_type: str = None) -> Optional[List[float]]:
         if not self.embedding_model_id:
-            self.logger.error("Embedding model for Llama was not set")
+            logger.error("Embedding model for Llama was not set")
             return None
-
         if not self.client:
-            self.logger.error("Llama client was not initialized")
+            logger.error("Llama client was not initialized")
             return None
 
         try:
             response = self.client.embed(
                 model=self.embedding_model_id,
-                input=self.process_text(text)
+                input=self.process_text(text),
             )
-
-            if not response or not response.get("embedding"):
-                self.logger.error("Error while embedding text with Llama")
-                return None
-
-            return response["embedding"]
-
+            # Ollama returns dataclass with .embeddings attribute (list of lists)
+            embeddings = getattr(response, "embeddings", None)
+            if embeddings and isinstance(embeddings, list) and len(embeddings) > 0:
+                return embeddings[0]
+            # Legacy fallback: dict
+            if isinstance(response, dict):
+                return response.get("embedding") or response.get("embeddings", [None])[0]
+            logger.error("Could not parse Llama embed response")
+            return None
         except Exception as e:
-            self.logger.error(f"Error while embedding text with Llama: {e}")
+            logger.error("Llama embed_text error: %s", e)
             return None
 
     def construct_prompt(self, prompt: str, role: str):
-        return {
-            "role": role,
-            "content": prompt
-        }
+        return {"role": role, "content": self.process_text(prompt)}

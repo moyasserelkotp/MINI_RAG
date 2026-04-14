@@ -1,7 +1,9 @@
 from enum import Enum
 
+
 class ResponseSignal(Enum):
 
+    # ── File upload ──────────────────────────────────────────────────────────
     FILE_VALIDATED_SUCCESS = "file_validate_successfully"
     FILE_TYPE_NOT_SUPPORTED = "file_type_not_supported"
     FILE_SIZE_EXCEEDED = "file_size_exceeded"
@@ -9,16 +11,30 @@ class ResponseSignal(Enum):
     FILE_UPLOAD_FAILED = "file_upload_failed"
     FILE_NOT_FOUND = "file_not_found"
 
+    # ── Processing ───────────────────────────────────────────────────────────
     PROCESSING_SUCCESS = "processing_success"
     PROCESSING_FAILED = "processing_failed"
     NO_FILES_ERROR = "not_found_files"
     FILE_ID_ERROR = "no_file_found_with_this_id"
 
+    # ── Projects ─────────────────────────────────────────────────────────────
     PROJECT_NOT_FOUND_ERROR = "project_not_found"
+    LIST_PROJECTS_SUCCESS = "list_projects_success"
+    DELETE_PROJECT_SUCCESS = "delete_project_success"
+    DELETE_PROJECT_ERROR = "delete_project_error"
+
+    # ── Vector DB ────────────────────────────────────────────────────────────
     INSERT_INTO_VECTORDB_ERROR = "insert_into_vectordb_error"
     INSERT_INTO_VECTORDB_SUCCESS = "insert_into_vectordb_success"
     VECTORDB_COLLECTION_RETRIEVED = "vectordb_collection_retrieved"
     VECTORDB_SEARCH_ERROR = "vectordb_search_error"
     VECTORDB_SEARCH_SUCCESS = "vectordb_search_success"
+    VECTORDB_DELETE_SUCCESS = "vectordb_delete_success"
+    VECTORDB_DELETE_ERROR = "vectordb_delete_error"
+
+    # ── RAG ──────────────────────────────────────────────────────────────────
     RAG_ANSWER_ERROR = "rag_answer_error"
     RAG_ANSWER_SUCCESS = "rag_answer_success"
+
+    # ── Rate limiting ────────────────────────────────────────────────────────
+    RATE_LIMIT_ERROR = "rate_limit_error"
