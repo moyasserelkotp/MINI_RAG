@@ -12,14 +12,7 @@ class DataController(BaseController):
         self.size_scale = 1048576 # convert MB to bytes
 
     def validate_uploaded_file(self, file: UploadFile):
-        """Return ``(is_valid, signal)`` for the supplied file.
-
-        Earlier versions of the code compared ``file.content_type`` against
-        ``FILE_ALLOWED_TYPES`` which was confusing because configuration ended
-        up specifying extensions (``txt``) rather than MIME types
-        (``text/plain``).  The environment now accepts either form; this
-        method normalises both for the check.
-        """
+        """Return ``(is_valid, signal)`` for the supplied file."""
 
         allowed = self.app_settings.FILE_ALLOWED_TYPES or []
 

@@ -134,6 +134,20 @@ async def _process_project_files(
 
         project_files_ids = {record.id: record.asset_name for record in project_files}
 
+        # Also scan the project directory for files not in the database
+        project_path = ProjectController().get_project_path(project_id=project_id)
+        if os.path.exists(project_path):
+            disk_files = os.listdir(project_path)
+            registered_files = {asset_name for asset_name in project_files_ids.values()}
+
+            # Add unregistered files with a temporary ID
+            for file_name in disk_files:
+                if file_name not in registered_files and os.path.isfile(
+                    os.path.join(project_path, file_name)
+                ):
+                    # Use file_name as ID for unregistered files
+                    project_files_ids[file_name] = file_name
+
     if len(project_files_ids) == 0:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,

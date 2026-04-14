@@ -4,6 +4,7 @@ from ..VectorDBEnums import DistanceMethodEnums
 import logging
 from typing import List
 import hashlib
+from rank_bm25 import BM25Okapi
 
 
 class QdrantDBProvider(VectorDBInterface):
@@ -135,8 +136,116 @@ class QdrantDBProvider(VectorDBInterface):
 
         return True
 
-    def search_by_vector(self, collection_name: str, vector: list, limit: int = 5):
+    def search_by_vector(
+        self,
+        collection_name: str,
+        vector: list,
+        limit: int = 5,
+        score_threshold: float = None,
+    ):
 
         return self.client.search(
-            collection_name=collection_name, query_vector=vector, limit=limit
+            collection_name=collection_name,
+            query_vector=vector,
+            limit=limit,
+            score_threshold=score_threshold,
         )
+
+    def hybrid_search(
+        self,
+        collection_name: str,
+        query_text: str,
+        vector: list,
+        limit: int = 5,
+        semantic_weight: float = 0.7,
+    ):
+        """
+        Hybrid search combining BM25 (keyword) and semantic search.
+
+        Args:
+            collection_name: Name of the collection
+            query_text: Query text for BM25 matching
+            vector: Query vector for semantic search
+            limit: Number of results to return
+            semantic_weight: Weight for semantic search (0-1), keyword gets (1-semantic_weight)
+        """
+        try:
+            # Get all points from collection for BM25 ranking
+            all_points = self.client.scroll(
+                collection_name=collection_name,
+                limit=10000,
+            )[0]
+
+            if not all_points:
+                return []
+
+            # Extract texts for BM25
+            texts = []
+            point_map = {}
+
+            for point in all_points:
+                text = point.payload.get("text", "")
+                texts.append(text)
+                point_map[len(texts) - 1] = point
+
+            # BM25 ranking
+            tokenized_query = query_text.lower().split()
+            bm25 = BM25Okapi([text.lower().split() for text in texts])
+            bm25_scores = bm25.get_scores(tokenized_query)
+
+            # Semantic search
+            semantic_results = self.client.search(
+                collection_name=collection_name,
+                query_vector=vector,
+                limit=limit * 3,  # Get more results to combine
+            )
+
+            # Create semantic score map
+            semantic_map = {}
+            for idx, result in enumerate(semantic_results):
+                semantic_map[result.id] = result.score
+
+            # Combine scores
+            combined_results = {}
+            for idx, (point, bm25_score) in enumerate(zip(all_points, bm25_scores)):
+                semantic_score = semantic_map.get(point.id, 0)
+                # Normalize both scores to 0-1 range
+                norm_bm25 = bm25_score / (max(bm25_scores) + 1e-10)
+                norm_semantic = semantic_score
+
+                # Weighted combination
+                combined_score = (
+                    1 - semantic_weight
+                ) * norm_bm25 + semantic_weight * norm_semantic
+
+                combined_results[point.id] = {
+                    "point": point,
+                    "combined_score": combined_score,
+                    "bm25_score": norm_bm25,
+                    "semantic_score": norm_semantic,
+                }
+
+            # Sort by combined score
+            sorted_results = sorted(
+                combined_results.values(),
+                key=lambda x: x["combined_score"],
+                reverse=True,
+            )
+
+            # Return top results with updated scores
+            final_results = []
+            for item in sorted_results[:limit]:
+                # Update the score to combined score
+                item["point"].score = item["combined_score"]
+                final_results.append(item["point"])
+
+            return final_results
+
+        except Exception as e:
+            self.logger.error(f"Hybrid search error: {e}")
+            # Fallback to semantic search
+            return self.search_by_vector(
+                collection_name=collection_name,
+                vector=vector,
+                limit=limit,
+            )

@@ -71,7 +71,9 @@ class NLPController(BaseController):
 
         return True
 
-    def search_vector_db_collection(self, project: Project, text: str, limit: int = 10):
+    def search_vector_db_collection(
+        self, project: Project, text: str, limit: int = 10, use_hybrid: bool = True
+    ):
 
         # step1: get collection name
         collection_name = self.create_collection_name(project_id=project.project_id)
@@ -84,10 +86,19 @@ class NLPController(BaseController):
         if not vector or len(vector) == 0:
             return False
 
-        # step3: do semantic search
-        results = self.vectordb_client.search_by_vector(
-            collection_name=collection_name, vector=vector, limit=limit
-        )
+        # step3: do search (hybrid or semantic only)
+        if use_hybrid:
+            results = self.vectordb_client.hybrid_search(
+                collection_name=collection_name,
+                query_text=text,
+                vector=vector,
+                limit=limit,
+                semantic_weight=0.6,  # 40% keyword matching, 60% semantic
+            )
+        else:
+            results = self.vectordb_client.search_by_vector(
+                collection_name=collection_name, vector=vector, limit=limit
+            )
 
         if not results:
             return False

@@ -60,3 +60,14 @@ class VectorDBInterface(ABC):
     @abstractmethod
     def search_by_vector(self, collection_name: str, vector: list, limit: int):
         pass
+
+    @abstractmethod
+    def hybrid_search(
+        self,
+        collection_name: str,
+        query_text: str,
+        vector: list,
+        limit: int,
+        semantic_weight: float = 0.7,
+    ):
+        pass

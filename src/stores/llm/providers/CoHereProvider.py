@@ -2,6 +2,7 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import CoHereEnums, DocumentTypeEnum
 import cohere
 import logging
+import time
 
 
 class CoHereProvider(LLMInterface):
@@ -28,6 +29,10 @@ class CoHereProvider(LLMInterface):
         self.client = cohere.Client(api_key=self.api_key)
 
         self.logger = logging.getLogger(__name__)
+
+        # Rate limiting for API calls (100 calls/minute = 1 call every 0.6 seconds)
+        self.last_embed_time = 0
+        self.min_embed_interval = 0.65  # seconds between embed calls
 
     @property
     def enums(self):
@@ -91,22 +96,33 @@ class CoHereProvider(LLMInterface):
             self.logger.error("Embedding model for CoHere was not set")
             return None
 
+        # Rate limiting: ensure minimum interval between API calls
+        elapsed = time.time() - self.last_embed_time
+        if elapsed < self.min_embed_interval:
+            time.sleep(self.min_embed_interval - elapsed)
+
+        self.last_embed_time = time.time()
+
         input_type = CoHereEnums.DOCUMENT
         if document_type == DocumentTypeEnum.QUERY:
             input_type = CoHereEnums.QUERY
 
-        response = self.client.embed(
-            model=self.embedding_model_id,
-            texts=[self.process_text(text)],
-            input_type=input_type,
-            embedding_types=["float"],
-        )
+        try:
+            response = self.client.embed(
+                model=self.embedding_model_id,
+                texts=[self.process_text(text)],
+                input_type=input_type,
+                embedding_types=["float"],
+            )
 
-        if not response or not response.embeddings or not response.embeddings.float:
-            self.logger.error("Error while embedding text with CoHere")
+            if not response or not response.embeddings or not response.embeddings.float:
+                self.logger.error("Error while embedding text with CoHere")
+                return None
+
+            return response.embeddings.float[0]
+        except Exception as e:
+            self.logger.error(f"Error while embedding text with CoHere: {e}")
             return None
-
-        return response.embeddings.float[0]
 
     def construct_prompt(self, prompt: str, role: str):
         return {"role": role, "text": self.process_text(prompt)}
