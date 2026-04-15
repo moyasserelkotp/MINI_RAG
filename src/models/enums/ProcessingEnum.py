@@ -6,4 +6,7 @@ class ProcessingEnum(Enum):
     PDF = ".pdf"
     DOC = ".doc"
     DOCX = ".docx"
+    CSV = ".csv"
+    MD = ".md"
+    HTML = ".html"
     

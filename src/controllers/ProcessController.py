@@ -4,6 +4,8 @@ import os
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.document_loaders import Docx2txtLoader
+from langchain_community.document_loaders import CSVLoader
+from langchain_community.document_loaders import BSHTMLLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from models import ProcessingEnum
 
@@ -26,7 +28,7 @@ class ProcessController(BaseController):
             file_id
         )
 
-        if file_ext == ProcessingEnum.TXT.value:
+        if file_ext in (ProcessingEnum.TXT.value, ProcessingEnum.MD.value):
             return TextLoader(file_path, encoding="utf-8")
 
         if file_ext == ProcessingEnum.PDF.value:
@@ -34,6 +36,12 @@ class ProcessController(BaseController):
 
         if file_ext in (ProcessingEnum.DOC.value, ProcessingEnum.DOCX.value):
             return Docx2txtLoader(file_path)
+
+        if file_ext == ProcessingEnum.CSV.value:
+            return CSVLoader(file_path)
+
+        if file_ext == ProcessingEnum.HTML.value:
+            return BSHTMLLoader(file_path)
 
         return None
 

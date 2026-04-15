@@ -4,6 +4,7 @@ from stores.llm.LLMEnums import DocumentTypeEnum
 from typing import List, Optional
 import logging
 import json
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,19 @@ class NLPController(BaseController):
     def create_collection_name(self, project_id: str) -> str:
         prefix = getattr(self.app_settings, "VECTOR_DB_COLLECTION_PREFIX", "collection")
         return f"{prefix}_{project_id}".strip()
+
+    def _get_cache_collection_name(self, project_id: str) -> str:
+        dim = self.embedding_client.embedding_size
+        return f"semantic_cache_{project_id}_{dim}".strip()
+
+    def _init_cache_collection(self, project_id: str):
+        col_name = self._get_cache_collection_name(project_id)
+        if not self.vectordb_client.is_collection_existed(collection_name=col_name):
+            self.vectordb_client.create_collection(
+                collection_name=col_name,
+                embedding_size=self.embedding_client.embedding_size,
+                do_reset=False
+            )
 
     # ── Collection management ─────────────────────────────────────────────────
 
@@ -189,8 +203,32 @@ class NLPController(BaseController):
         limit: int = 10,
         use_hybrid: bool = True,
         score_threshold: Optional[float] = None,
+        use_rerank: bool = True,
     ):
         answer, full_prompt, chat_history = None, None, None
+
+        # Step 0: Check Semantic Cache
+        cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
+        self._init_cache_collection(project.project_id)
+        cache_col_name = self._get_cache_collection_name(project.project_id)
+
+        cache_vec = self.embedding_client.embed_text(text=query, document_type=DocumentTypeEnum.QUERY.value)
+        if cache_vec:
+            try:
+                # We do a pure semantic search for cache
+                cached_results = self.vectordb_client.search_by_vector(
+                    collection_name=cache_col_name,
+                    vector=cache_vec,
+                    limit=1,
+                    score_threshold=cache_threshold
+                )
+                if cached_results and len(cached_results) > 0:
+                    logger.info("Semantic Cache hit for query: %s", query)
+                    cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
+                    if cached_answer:
+                        return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", []
+            except Exception as e:
+                logger.error("Error accessing semantic cache: %s", e)
 
         # Step 1: Retrieve relevant documents
         retrieved_documents = self.search_vector_db_collection(
@@ -209,6 +247,33 @@ class NLPController(BaseController):
         if len(retrieved_documents) == 0:
             logger.warning("No documents above threshold for query: %s", query)
             return None, None, None  # None denotes 0 documents found
+
+        # Step 1.5: Cohere Reranking
+        should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
+        if should_rerank and retrieved_documents:
+            try:
+                import cohere
+                cohere_key = getattr(self.app_settings, "COHERE_API_KEY", None)
+                if cohere_key:
+                    cohere_client = cohere.Client(cohere_key)
+                    docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
+                    reranked = cohere_client.rerank(
+                        model="rerank-english-v3.0",
+                        query=query,
+                        documents=docs_texts,
+                        top_n=min(limit, len(docs_texts))
+                    )
+                    
+                    reranked_docs = []
+                    for r in reranked.results:
+                        d = retrieved_documents[r.index]
+                        d.score = float(r.relevance_score)
+                        reranked_docs.append(d)
+                    
+                    retrieved_documents = reranked_docs
+                    logger.info("Successfully reranked documents with Cohere.")
+            except Exception as e:
+                logger.error("Cohere Rerank failed: %s", e)
 
         # Step 2: Build document prompts with source metadata
         system_prompt = self.template_parser.get("rag", "system_prompt")
@@ -248,5 +313,19 @@ class NLPController(BaseController):
         answer = self.generation_client.generate_text(
             prompt=full_prompt, chat_history=chat_history
         )
+
+        # Step 5: Save Answer to Semantic Cache
+        if answer and cache_vec:
+            try:
+                cache_id = int(hashlib.md5(query.encode()).hexdigest(), 16) % (2**63 - 1)
+                self.vectordb_client.insert_one(
+                    collection_name=cache_col_name,
+                    text=query,
+                    vector=cache_vec,
+                    metadata={"answer": answer},
+                    record_id=cache_id
+                )
+            except Exception as e:
+                logger.error("Error setting semantic cache: %s", e)
 
         return answer, full_prompt, chat_history
