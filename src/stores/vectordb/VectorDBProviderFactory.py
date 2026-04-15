@@ -1,4 +1,4 @@
-from .providers import QdrantDBProvider
+from .providers import QdrantDBProvider, FaissDBProvider
 from .VectorDBEnums import VectorDBEnums
 from controllers.BaseController import BaseController
 
@@ -15,6 +15,15 @@ class VectorDBProviderFactory:
             )
 
             return QdrantDBProvider(
+                db_path=db_path,
+                distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
+            )
+        elif provider == VectorDBEnums.FAISS.value:
+            db_path = self.base_controller.get_database_path(
+                db_name=self.config.VECTOR_DB_PATH + "_faiss"
+            )
+
+            return FaissDBProvider(
                 db_path=db_path,
                 distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
             )
