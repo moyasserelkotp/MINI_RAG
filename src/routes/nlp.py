@@ -18,6 +18,7 @@ nlp_router = APIRouter(
 
 def _make_nlp_controller(request: Request) -> NLPController:
     return NLPController(
+        db_client=request.app.db_client,
         vectordb_client=request.app.vectordb_client,
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
@@ -179,12 +180,13 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     nlp_controller = _make_nlp_controller(request)
-    answer, full_prompt, chat_history = nlp_controller.answer_rag_question(
+    answer, full_prompt, chat_history = await nlp_controller.answer_rag_question(
         project=project,
         query=search_request.text,
         limit=search_request.limit,
         use_hybrid=search_request.use_hybrid,
         score_threshold=search_request.score_threshold,
+        session_id=search_request.session_id,
     )
 
     if answer is False:

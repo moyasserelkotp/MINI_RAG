@@ -95,6 +95,14 @@ class Settings(BaseSettings):
     USE_RERANK: bool = False
     SEMANTIC_CACHE_THRESHOLD: float = 0.95
 
+    # ── RAG Memory Settings ───────────────────────────────────────────────────
+    USE_WINDOW_MEMORY: bool = True
+    WINDOW_MEMORY_K: int = 5
+    USE_SUMMARY_MEMORY: bool = True
+    USE_ENTITY_MEMORY: bool = True
+    USE_VECTOR_MEMORY: bool = True
+    USE_SEMANTIC_CACHE: bool = True
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

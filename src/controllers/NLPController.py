@@ -5,14 +5,16 @@ from typing import List, Optional
 import logging
 import json
 import hashlib
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 
 class NLPController(BaseController):
 
-    def __init__(self, vectordb_client, generation_client, embedding_client, template_parser):
+    def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser):
         super().__init__()
+        self.db_client = db_client
         self.vectordb_client = vectordb_client
         self.generation_client = generation_client
         self.embedding_client = embedding_client
@@ -37,6 +39,19 @@ class NLPController(BaseController):
                 do_reset=False
             )
 
+    def _get_entity_collection_name(self, project_id: str) -> str:
+        dim = self.embedding_client.embedding_size
+        return f"entities_{project_id}_{dim}".strip()
+
+    def _init_entity_collection(self, project_id: str):
+        col_name = self._get_entity_collection_name(project_id)
+        if not self.vectordb_client.is_collection_existed(collection_name=col_name):
+            self.vectordb_client.create_collection(
+                collection_name=col_name,
+                embedding_size=self.embedding_client.embedding_size,
+                do_reset=False
+            )
+
     # ── Collection management ─────────────────────────────────────────────────
 
     def reset_vector_db_collection(self, project: Project):
@@ -53,15 +68,8 @@ class NLPController(BaseController):
     # ── Indexing ──────────────────────────────────────────────────────────────
 
     def _embed_texts_batch(self, texts: List[str], document_type: str) -> List[list]:
-        """Embed a list of texts using batch API calls where available.
-
-        Falls back to one-by-one embedding if `embed_batch` is not supported.
-        Returns a list of embedding vectors (same order as input). Texts that
-        fail to embed get ``None`` in the output list.
-        """
         batch_size = self.app_settings.MAX_EMBEDDING_BATCH_SIZE
 
-        # Use batch method if available (CoHere, OpenAI)
         if hasattr(self.embedding_client, "embed_batch"):
             vectors: List[Optional[list]] = []
             for i in range(0, len(texts), batch_size):
@@ -72,11 +80,9 @@ class NLPController(BaseController):
                 if batch_vectors:
                     vectors.extend(batch_vectors)
                 else:
-                    # Partial failure — fill with None
                     vectors.extend([None] * len(batch))
             return vectors
 
-        # Fallback: sequential
         return [
             self.embedding_client.embed_text(text=t, document_type=document_type)
             for t in texts
@@ -91,14 +97,11 @@ class NLPController(BaseController):
     ) -> bool:
         collection_name = self.create_collection_name(project_id=project.project_id)
 
-        # Texts and metadata
         texts = [c.chunk_text for c in chunks]
         metadata = [c.chunk_metadata for c in chunks]
 
-        # Batch-embed all texts at once
         vectors = self._embed_texts_batch(texts, document_type=DocumentTypeEnum.DOCUMENT.value)
 
-        # Filter out any failed embeddings
         valid = [
             (t, v, m, rid)
             for t, v, m, rid in zip(texts, vectors, metadata, chunks_ids)
@@ -110,14 +113,12 @@ class NLPController(BaseController):
 
         f_texts, f_vectors, f_metadata, f_ids = zip(*valid)
 
-        # Create collection (do_reset handled here)
         self.vectordb_client.create_collection(
             collection_name=collection_name,
             embedding_size=self.embedding_client.embedding_size,
             do_reset=do_reset,
         )
 
-        # Batch insert
         self.vectordb_client.insert_many(
             collection_name=collection_name,
             texts=list(f_texts),
@@ -138,28 +139,19 @@ class NLPController(BaseController):
         use_hybrid: bool = True,
         score_threshold: Optional[float] = None,
     ):
-        """Search the vector DB collection.
-
-        Returns:
-            list  — results (may be empty if threshold filtered everything out)
-            None  — infrastructure failure (embed failed or search threw an error)
-        """
         collection_name = self.create_collection_name(project_id=project.project_id)
 
-        # Embed the query
         vector = self.embedding_client.embed_text(
             text=text, document_type=DocumentTypeEnum.QUERY.value
         )
         if not vector or len(vector) == 0:
             logger.error("Failed to embed query: %s", text)
-            return None  # real failure — caller should surface as error
+            return None
 
-        # Resolve score threshold (None or 0.0 means no filtering)
         threshold = score_threshold
         if threshold is None:
             threshold = getattr(self.app_settings, "SEARCH_SCORE_THRESHOLD", 0.0) or 0.0
 
-        # Perform vector search
         try:
             if use_hybrid:
                 results = self.vectordb_client.hybrid_search(
@@ -170,7 +162,6 @@ class NLPController(BaseController):
                     semantic_weight=0.6,
                 )
             else:
-                # Pass threshold to Qdrant directly when doing pure semantic search
                 results = self.vectordb_client.search_by_vector(
                     collection_name=collection_name,
                     vector=vector,
@@ -179,24 +170,70 @@ class NLPController(BaseController):
                 )
         except Exception as e:
             logger.error("Vector search failed: %s", e)
-            return None  # real failure
+            return None
 
-        # results may be None or empty if the collection is empty
         if results is None:
             return []
 
-        # Apply threshold post-filter for hybrid mode
-        # (pure semantic already has it applied by Qdrant)
         if use_hybrid and threshold and threshold > 0:
             results = [r for r in results if getattr(r, "score", 0.0) >= threshold]
 
-        # Always return a list — empty list means "no results above threshold",
-        # which is NOT an error; callers must check for None to detect failures.
         return list(results)
+
+    # ── Memory Subroutines ────────────────────────────────────────────────────
+
+    async def _update_session_summary(self, session_id: str, project_id, session_model, message_model):
+        try:
+            messages = await message_model.get_messages_by_session(session_id, limit=20)
+            text_block = "\n".join([f"{m.role}: {m.text}" for m in messages])
+            prompt = f"Summarize the following conversation focusing on the main topics and important context. Stay concise:\n\n{text_block}"
+            
+            chat_history = [
+                self.generation_client.construct_prompt("You are a summarization AI.", self.generation_client.enums.SYSTEM.value)
+            ]
+            summary = await asyncio.to_thread(self.generation_client.generate_text, prompt=prompt, chat_history=chat_history)
+            
+            if summary:
+                await session_model.update_summary(session_id, summary)
+                # Reset counter to avoid continuous summarizing
+                await session_model.increment_message_count(session_id, -10)
+        except Exception as e:
+            logger.error("Summary Generation Failed: %s", e)
+
+    async def _extract_and_save_entities(self, session_id: str, project: Project, query: str, answer: str, q_vec: list):
+        try:
+            prompt = (
+                "Identify any crucial facts, user preferences, or distinct entities the user stated about themselves "
+                "or the conversation implicitly established that are worth remembering long-term. "
+                "Return them as a bulleted list. If there is nothing crucial to remember, reply with nothing.\n\n"
+                f"User: {query}\n"
+            )
+            chat_history = [
+                self.generation_client.construct_prompt("You extract explicit long-term memory facts. Keep it short.", self.generation_client.enums.SYSTEM.value)
+            ]
+            facts = await asyncio.to_thread(self.generation_client.generate_text, prompt=prompt, chat_history=chat_history)
+            facts = facts.strip() if facts else ""
+
+            if facts and len(facts) > 5 and "nothing" not in facts.lower():
+                self._init_entity_collection(project.project_id)
+                col_name = self._get_entity_collection_name(project.project_id)
+                # Save facts to entity memory with the query vector
+                fact_id = int(hashlib.md5((session_id + query).encode()).hexdigest(), 16) % (2**63 - 1)
+                await asyncio.to_thread(
+                    self.vectordb_client.insert_one,
+                    collection_name=col_name,
+                    text=facts,
+                    vector=q_vec,
+                    metadata={"source": "entity_extractor", "session_id": session_id},
+                    record_id=fact_id
+                )
+        except Exception as e:
+            logger.error("Entity Extraction Failed: %s", e)
+
 
     # ── Answer ────────────────────────────────────────────────────────────────
 
-    def answer_rag_question(
+    async def answer_rag_question(
         self,
         project: Project,
         query: str,
@@ -204,23 +241,34 @@ class NLPController(BaseController):
         use_hybrid: bool = True,
         score_threshold: Optional[float] = None,
         use_rerank: bool = True,
+        session_id: Optional[str] = None
     ):
         answer, full_prompt, chat_history = None, None, None
 
-        # Step 0: Check Semantic Cache
+        # Feature flags
+        use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
+        window_k = getattr(self.app_settings, "WINDOW_MEMORY_K", 5)
+        use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
+        use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
+        use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
+        use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
+
+        # 0. Embed Query
+        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=query, document_type=DocumentTypeEnum.QUERY.value)
+        if not cache_vec:
+            logger.error("Failed to embed query.")
+            return False, None, None
+
+        # 1. Semantic Cache Check
         cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
         self._init_cache_collection(project.project_id)
         cache_col_name = self._get_cache_collection_name(project.project_id)
 
-        cache_vec = self.embedding_client.embed_text(text=query, document_type=DocumentTypeEnum.QUERY.value)
-        if cache_vec:
+        if use_cache:
             try:
-                # We do a pure semantic search for cache
-                cached_results = self.vectordb_client.search_by_vector(
-                    collection_name=cache_col_name,
-                    vector=cache_vec,
-                    limit=1,
-                    score_threshold=cache_threshold
+                cached_results = await asyncio.to_thread(
+                    self.vectordb_client.search_by_vector,
+                    collection_name=cache_col_name, vector=cache_vec, limit=1, score_threshold=cache_threshold
                 )
                 if cached_results and len(cached_results) > 0:
                     logger.info("Semantic Cache hit for query: %s", query)
@@ -230,102 +278,136 @@ class NLPController(BaseController):
             except Exception as e:
                 logger.error("Error accessing semantic cache: %s", e)
 
-        # Step 1: Retrieve relevant documents
-        retrieved_documents = self.search_vector_db_collection(
-            project=project,
-            text=query,
-            limit=limit,
-            use_hybrid=use_hybrid,
-            score_threshold=score_threshold,
-        )
+        # 2. Database Session Initialization
+        session_obj = None
+        session_messages = []
+        if session_id and (use_window or use_summary):
+            from models.SessionModel import SessionModel
+            from models.MessageModel import MessageModel
+            session_model = await SessionModel.create_instance(self.db_client)
+            message_model = await MessageModel.create_instance(self.db_client)
+            session_obj = await session_model.get_session_or_create_one(session_id, project.id)
+            if use_window:
+                session_messages = await message_model.get_messages_by_session(session_id, limit=window_k)
 
-        # None = infrastructure failure; [] = no results (threshold too strict or empty index)
-        if retrieved_documents is None:
-            logger.error("Search failed (infrastructure error) for query: %s", query)
-            return False, None, None  # False denotes infrastructure error
-
-        if len(retrieved_documents) == 0:
-            logger.warning("No documents above threshold for query: %s", query)
-            return None, None, None  # None denotes 0 documents found
-
-        # Step 1.5: Cohere Reranking
-        should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
-        if should_rerank and retrieved_documents:
+        # 3. Entity Memory Retrieval
+        entities_text = ""
+        if session_id and use_entity:
             try:
-                import cohere
-                cohere_key = getattr(self.app_settings, "COHERE_API_KEY", None)
-                if cohere_key:
-                    cohere_client = cohere.Client(cohere_key)
-                    docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
-                    reranked = cohere_client.rerank(
-                        model="rerank-english-v3.0",
-                        query=query,
-                        documents=docs_texts,
-                        top_n=min(limit, len(docs_texts))
-                    )
-                    
-                    reranked_docs = []
-                    for r in reranked.results:
-                        d = retrieved_documents[r.index]
-                        d.score = float(r.relevance_score)
-                        reranked_docs.append(d)
-                    
-                    retrieved_documents = reranked_docs
-                    logger.info("Successfully reranked documents with Cohere.")
+                ent_col = self._get_entity_collection_name(project.project_id)
+                self._init_entity_collection(project.project_id)
+                ent_docs = await asyncio.to_thread(
+                    self.vectordb_client.search_by_vector,
+                    collection_name=ent_col,
+                    vector=cache_vec,
+                    limit=3,
+                    score_threshold=0.6
+                )
+                if ent_docs:
+                    entities_text = "\n".join([d.payload.get("text", "") for d in ent_docs])
             except Exception as e:
-                logger.error("Cohere Rerank failed: %s", e)
+                logger.error("Error accessing entity memory: %s", e)
 
-        # Step 2: Build document prompts with source metadata
+        # 4. Vector DB Retrieval
+        retrieved_documents = []
+        if use_vector:
+            retrieved_documents = await asyncio.to_thread(
+                self.search_vector_db_collection,
+                project=project, text=query, limit=limit, use_hybrid=use_hybrid, score_threshold=score_threshold
+            )
+            if retrieved_documents is None:
+                return False, None, None
+
+            # Cohere Rerank
+            should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
+            if should_rerank and retrieved_documents:
+                try:
+                    import cohere
+                    cohere_key = getattr(self.app_settings, "COHERE_API_KEY", None)
+                    if cohere_key:
+                        cohere_client = cohere.Client(cohere_key)
+                        docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
+                        reranked = await asyncio.to_thread(
+                            cohere_client.rerank,
+                            model="rerank-english-v3.0", query=query, documents=docs_texts, top_n=min(limit, len(docs_texts))
+                        )
+                        reranked_docs = []
+                        for r in reranked.results:
+                            d = retrieved_documents[r.index]
+                            d.score = float(r.relevance_score)
+                            reranked_docs.append(d)
+                        retrieved_documents = reranked_docs
+                except Exception as e:
+                    logger.error("Cohere Rerank failed: %s", e)
+
+        # 5. Prompt Construction
         system_prompt = self.template_parser.get("rag", "system_prompt")
+        
+        if use_summary and session_obj and session_obj.summary:
+            system_prompt += f"\n\n[Conversation Summary]:\n{session_obj.summary}"
+
+        if use_entity and entities_text:
+            system_prompt += f"\n\n[Important Retained Facts]:\n{entities_text}"
+
+        chat_history = [
+            self.generation_client.construct_prompt(prompt=system_prompt, role=self.generation_client.enums.SYSTEM.value)
+        ]
+
+        if use_window:
+            for msg in session_messages:
+                role = self.generation_client.enums.USER.value if msg.role == "user" else self.generation_client.enums.ASSISTANT.value
+                chat_history.append(self.generation_client.construct_prompt(prompt=msg.text, role=role))
 
         document_parts = []
-        for idx, doc in enumerate(retrieved_documents):
+        for idx, doc in enumerate(retrieved_documents or []):
             chunk_text = doc.payload.get("text", "")
             doc_metadata = doc.payload.get("metadata", {})
             source = doc_metadata.get("source", "unknown") if doc_metadata else "unknown"
             score = round(getattr(doc, "score", 0.0), 4)
 
             doc_prompt = self.template_parser.get(
-                "rag",
-                "document_prompt",
-                {
-                    "doc_num": idx + 1,
-                    "chunk_text": chunk_text,
-                    "source": source,
-                    "score": score,
-                },
+                "rag", "document_prompt", {"doc_num": idx + 1, "chunk_text": chunk_text, "source": source, "score": score}
             )
             document_parts.append(doc_prompt)
 
         documents_prompts = "\n\n".join(document_parts)
         footer_prompt = self.template_parser.get("rag", "footer_prompt", {"query": query})
+        full_prompt = "\n\n".join([documents_prompts, footer_prompt]) if documents_prompts else footer_prompt
 
-        # Step 3: Construct chat history
-        chat_history = [
-            self.generation_client.construct_prompt(
-                prompt=system_prompt,
-                role=self.generation_client.enums.SYSTEM.value,
-            )
-        ]
-        full_prompt = "\n\n".join([documents_prompts, footer_prompt])
+        # 6. Generate Answer
+        if not retrieved_documents and use_vector and not session_messages:
+            # Short circuit if vector search gives absolutely nothing AND no conversation exists.
+            answer = None
+        else:
+            answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history)
 
-        # Step 4: Generate answer
-        answer = self.generation_client.generate_text(
-            prompt=full_prompt, chat_history=chat_history
-        )
+        # 7. Post-generation Memory Saves
+        if answer:
+            # Semantic Cache Sub
+            if use_cache:
+                try:
+                    cache_id = int(hashlib.md5(query.encode()).hexdigest(), 16) % (2**63 - 1)
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            self.vectordb_client.insert_one,
+                            collection_name=cache_col_name, text=query, vector=cache_vec, metadata={"answer": answer}, record_id=cache_id
+                        )
+                    )
+                except Exception:
+                    pass
 
-        # Step 5: Save Answer to Semantic Cache
-        if answer and cache_vec:
-            try:
-                cache_id = int(hashlib.md5(query.encode()).hexdigest(), 16) % (2**63 - 1)
-                self.vectordb_client.insert_one(
-                    collection_name=cache_col_name,
-                    text=query,
-                    vector=cache_vec,
-                    metadata={"answer": answer},
-                    record_id=cache_id
-                )
-            except Exception as e:
-                logger.error("Error setting semantic cache: %s", e)
+            # Window + Summary Sub
+            if session_id and (use_window or use_summary):
+                from models.db_schemes.chat_message import ChatMessage
+                await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
+                await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=answer))
+                await session_model.increment_message_count(session_id, 2)
+
+                if use_summary and session_obj.message_count + 2 >= 10:
+                    asyncio.create_task(self._update_session_summary(session_id, project.id, session_model, message_model))
+
+            # Entity Action Sub
+            if session_id and use_entity:
+                asyncio.create_task(self._extract_and_save_entities(session_id, project, query, answer, cache_vec))
 
         return answer, full_prompt, chat_history

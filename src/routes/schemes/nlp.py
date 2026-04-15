@@ -11,3 +11,4 @@ class SearchRequest(BaseModel):
     limit: Optional[int] = Field(5, ge=1, le=50, description="Number of results to return")
     score_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum relevance score (0 = no filter)")
     use_hybrid: Optional[bool] = Field(True, description="Use hybrid (BM25 + semantic) search")
+    session_id: Optional[str] = Field(None, description="Optional Session ID for chat memory")
