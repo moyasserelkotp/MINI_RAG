@@ -28,7 +28,7 @@ def _get_default_ollama_host() -> str:
         pass
 
     # 3. Default local IPv4 (better than 'localhost' on Windows for httpx to avoid IPv6 issues)
-    return "http://127.0.0.1:11434"
+    return "http://172.21.16.1:11434"
 
 
 
@@ -37,7 +37,7 @@ class LlamaProvider(LLMInterface):
     def __init__(
         self,
         api_key: str = None,
-        api_url: str = "http://localhost:11434/",
+        api_url: str = None,
         default_input_max_characters: int = 1024,
         default_generation_max_output_tokens: int = 512,
         default_generation_temperature: float = 0.1,
@@ -55,7 +55,7 @@ class LlamaProvider(LLMInterface):
 
         try:
             # Dynamically determine the best host string and pass it to Client
-            host_url = _get_default_ollama_host()
+            host_url = self.api_url if self.api_url else _get_default_ollama_host()
             self.client = ollama.Client(host=host_url)
         except Exception as e:
             msg = "Llama client was not initialized"
@@ -95,23 +95,31 @@ class LlamaProvider(LLMInterface):
         temperature = temperature or self.default_generation_temperature
         num_predict = max_output_tokens or self.default_generation_max_output_tokens
 
+        messages = list(chat_history)
+        messages.append(self.construct_prompt(prompt=prompt, role=self.enums.USER.value))
+
         try:
-            response = self.client.generate(
+            response = self.client.chat(
                 model=self.generation_model_id,
-                prompt=self.process_text(prompt),
+                messages=messages,
                 options={
                     "temperature": temperature,
                     "num_predict": num_predict,
+                    "num_ctx": 4096,
                 },
                 stream=False,
             )
             # Bug fix: Ollama returns a dataclass object, not a dict
             # Use attribute access; fall back gracefully
-            text_out = getattr(response, "response", None)
-            if not text_out and isinstance(response, dict):
-                text_out = response.get("response")
+            message = getattr(response, "message", None)
+            text_out = None
+            if message:
+                text_out = getattr(message, "content", None)
+            elif isinstance(response, dict):
+                text_out = response.get("message", {}).get("content")
+
             if not text_out:
-                msg = "Empty response from Llama generate"
+                msg = "Empty response from Llama chat"
                 logger.error(msg)
                 return msg
             return text_out

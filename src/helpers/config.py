@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     COHERE_API_KEY: Optional[str] = None
     HUGGINGFACE_API_KEY: Optional[str] = None
     LLAMA_API_KEY: Optional[str] = None
+    LLAMA_API_URL: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
 
     GENERATION_MODEL_ID: Optional[str] = None
