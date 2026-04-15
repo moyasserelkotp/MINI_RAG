@@ -27,18 +27,18 @@ class DataController(BaseController):
         """
         allowed: list = self.app_settings.FILE_ALLOWED_TYPES or []
 
-        # --- extension check ------------------------------------------------
+        #  extension check 
         parts = (file.filename or "").rsplit(".", 1)
         ext = parts[-1].lower() if len(parts) == 2 else ""
 
-        # --- MIME check (normalise to extension) ----------------------------
+        #  MIME check (normalise to extension) 
         raw_mime = (file.content_type or "").lower().split(";")[0].strip()
         mime_ext = _MIME_TO_EXT.get(raw_mime, raw_mime)
 
         if ext not in allowed and mime_ext not in allowed:
             return False, ResponseSignal.FILE_TYPE_NOT_SUPPORTED.value
 
-        # --- size check (FILE_MAX_SIZE is already bytes in .env) ------------
+        #  size check (FILE_MAX_SIZE is already bytes in .env) 
         max_bytes = self.app_settings.FILE_MAX_SIZE
         if max_bytes and file.size and file.size > max_bytes:
             return False, ResponseSignal.FILE_SIZE_EXCEEDED.value

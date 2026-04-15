@@ -1,4 +1,4 @@
-from .providers import QdrantDBProvider, FaissDBProvider
+from .providers import QdrantDBProvider, FaissDBProvider, ChromaDBProvider, PineconeDBProvider
 from .VectorDBEnums import VectorDBEnums
 from controllers.BaseController import BaseController
 
@@ -25,6 +25,21 @@ class VectorDBProviderFactory:
 
             return FaissDBProvider(
                 db_path=db_path,
+                distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
+            )
+        elif provider == VectorDBEnums.CHROMA.value:
+            db_path = self.base_controller.get_database_path(
+                db_name=self.config.VECTOR_DB_PATH + "_chroma"
+            )
+
+            return ChromaDBProvider(
+                db_path=db_path,
+                distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
+            )
+        elif provider == VectorDBEnums.PINECONE.value:
+            return PineconeDBProvider(
+                api_key=self.config.PINECONE_API_KEY,
+                environment=self.config.PINECONE_ENV,
                 distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
             )
 

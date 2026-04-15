@@ -73,8 +73,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Mini Tourism RAG",
-    description="A RAG-powered question-answering API for tourism data.",
+    title="Mini RAG",
+    description="A RAG-powered question-answering API for data.",
     version="0.2",
     lifespan=lifespan,
 )

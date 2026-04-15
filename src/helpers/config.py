@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     FILE_ALLOWED_TYPES: Union[List[str], str] = []
     FILE_MAX_SIZE: int = 0          # bytes (already in bytes, no extra scaling)
     FILE_DEFAULT_CHUNK_SIZE: int = 512_000  # streaming read chunk (bytes)
+    FILE_PROCESS_CHUNK_SIZE: int = 512
+    FILE_PROCESS_OVERLAP_SIZE: int = 50
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -78,6 +80,8 @@ class Settings(BaseSettings):
     VECTOR_DB_PATH: str
     VECTOR_DB_DISTANCE_METHOD: Optional[str] = "cosine"
     VECTOR_DB_COLLECTION_PREFIX: str = "collection"
+    PINECONE_API_KEY: Optional[str] = None
+    PINECONE_ENV: Optional[str] = None
 
     # Max texts per batch embedding call
     MAX_EMBEDDING_BATCH_SIZE: int = 96
