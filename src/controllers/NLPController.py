@@ -19,6 +19,8 @@ class NLPController(BaseController):
         self.generation_client = generation_client
         self.embedding_client = embedding_client
         self.template_parser = template_parser
+        # Cache to avoid repeated VectorDB round-trips for collection existence
+        self._initialized_collections: set = set()
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -32,12 +34,15 @@ class NLPController(BaseController):
 
     def _init_cache_collection(self, project_id: str):
         col_name = self._get_cache_collection_name(project_id)
+        if col_name in self._initialized_collections:
+            return
         if not self.vectordb_client.is_collection_existed(collection_name=col_name):
             self.vectordb_client.create_collection(
                 collection_name=col_name,
                 embedding_size=self.embedding_client.embedding_size,
                 do_reset=False
             )
+        self._initialized_collections.add(col_name)
 
     def _get_entity_collection_name(self, project_id: str) -> str:
         dim = self.embedding_client.embedding_size
@@ -45,12 +50,15 @@ class NLPController(BaseController):
 
     def _init_entity_collection(self, project_id: str):
         col_name = self._get_entity_collection_name(project_id)
+        if col_name in self._initialized_collections:
+            return
         if not self.vectordb_client.is_collection_existed(collection_name=col_name):
             self.vectordb_client.create_collection(
                 collection_name=col_name,
                 embedding_size=self.embedding_client.embedding_size,
                 do_reset=False
             )
+        self._initialized_collections.add(col_name)
 
     # ── Collection management ─────────────────────────────────────────────────
 
@@ -195,8 +203,11 @@ class NLPController(BaseController):
             
             if summary:
                 await session_model.update_summary(session_id, summary)
-                # Reset counter to avoid continuous summarizing
-                await session_model.increment_message_count(session_id, -10)
+                # Reset counter to 0 to avoid continuous summarizing
+                await self.db_client["chat_sessions"].update_one(
+                    {"session_id": session_id},
+                    {"$set": {"message_count": 0}}
+                )
         except Exception as e:
             logger.error("Summary Generation Failed: %s", e)
 
@@ -281,13 +292,16 @@ class NLPController(BaseController):
         # 2. Database Session Initialization
         session_obj = None
         session_messages = []
-        if session_id and (use_window or use_summary):
+        session_model = None
+        message_model = None
+        if session_id:
             from models.SessionModel import SessionModel
             from models.MessageModel import MessageModel
             session_model = await SessionModel.create_instance(self.db_client)
             message_model = await MessageModel.create_instance(self.db_client)
-            session_obj = await session_model.get_session_or_create_one(session_id, project.id)
-            if use_window:
+            if use_window or use_summary:
+                session_obj = await session_model.get_session_or_create_one(session_id, project.id)
+            if use_window and session_obj:
                 session_messages = await message_model.get_messages_by_session(session_id, limit=window_k)
 
         # 3. Entity Memory Retrieval
@@ -377,14 +391,16 @@ class NLPController(BaseController):
         # 6. Generate Answer
         if not retrieved_documents and use_vector and not session_messages:
             # Short circuit if vector search gives absolutely nothing AND no conversation exists.
-            answer = None
+            return None, None, None
         else:
             answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history)
 
         # 7. Post-generation Memory Saves
         if answer:
             # Semantic Cache Sub
-            if use_cache:
+            is_negative_answer = "cannot answer" in answer.lower() or "not contain the answer" in answer.lower()
+            
+            if use_cache and not is_negative_answer:
                 try:
                     cache_id = int(hashlib.md5(query.encode()).hexdigest(), 16) % (2**63 - 1)
                     asyncio.create_task(
@@ -397,13 +413,13 @@ class NLPController(BaseController):
                     pass
 
             # Window + Summary Sub
-            if session_id and (use_window or use_summary):
+            if session_id and session_model and message_model:
                 from models.db_schemes.chat_message import ChatMessage
                 await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
                 await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=answer))
                 await session_model.increment_message_count(session_id, 2)
 
-                if use_summary and session_obj.message_count + 2 >= 10:
+                if use_summary and session_obj and (session_obj.message_count + 2 >= 10):
                     asyncio.create_task(self._update_session_summary(session_id, project.id, session_model, message_model))
 
             # Entity Action Sub

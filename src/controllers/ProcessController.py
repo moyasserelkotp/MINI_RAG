@@ -103,7 +103,7 @@ class ProcessController(BaseController):
                 import nltk
                 nltk.download('punkt', quiet=True)
                 nltk.download('punkt_tab', quiet=True)
-                text_splitter = NLTKTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size)
+                text_splitter = NLTKTextSplitter(chunk_size=chunk_size)
             except Exception:
                 # Fallback to simple sentence based splitting
                 from langchain_text_splitters import CharacterTextSplitter

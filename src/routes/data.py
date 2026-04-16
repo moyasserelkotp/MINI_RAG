@@ -12,6 +12,7 @@ from models.ChunkModel import ChunkModel
 from models.db_schemes import DataChunk, Asset
 
 import os
+from bson.objectid import ObjectId
 import logging
 from models.enums.AssetTypeEnum import AssetTypeEnum
 
@@ -169,7 +170,7 @@ async def _process_project_files(
                 chunk_metadata=chunk.metadata,
                 chunk_order=i + 1,
                 chunk_project_id=project.id,
-                chunk_asset_id=asset_id if not isinstance(asset_id, str) else None,
+                chunk_asset_id=ObjectId(asset_id) if isinstance(asset_id, str) else asset_id,
             )
             for i, chunk in enumerate(file_chunks)
         ]

@@ -92,6 +92,7 @@ class Settings(BaseSettings):
 
     # ── Language templates ────────────────────────────────────────────────────
     PRIMARY_LANG: str = "en"
+    DEFAULT_LANG: str = "en"
     # ── RAG Enhancements ──────────────────────────────────────────────────────
     USE_RERANK: bool = False
     SEMANTIC_CACHE_THRESHOLD: float = 0.95

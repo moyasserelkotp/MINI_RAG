@@ -52,7 +52,7 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
     is_first_page = True
 
     while has_records:
-        page_chunks = await chunk_model.get_poject_chunks(
+        page_chunks = await chunk_model.get_project_chunks(
             project_id=project.id, page_no=page_no
         )
 
@@ -196,15 +196,8 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
             content={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "Search infrastructure failed"},
         )
 
-    if answer is None and full_prompt is None:
-        # Both being None means the search itself failed (embed/infra error)
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"signal": ResponseSignal.RAG_ANSWER_ERROR.value},
-        )
-
-    if not answer and full_prompt is None:
-        # Search returned 0 results above threshold — not a server error
+    if answer is None and full_prompt is None and chat_history is None:
+        # No relevant documents found — not a server error
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
