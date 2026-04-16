@@ -25,3 +25,5 @@ torch==2.2.0
 tokenizers>=0.15,<1
 ollama==0.6.1
 httpx>=0.24.0
+langchain-experimental
+nltk

@@ -88,6 +88,7 @@ async def _process_project_files(
     chunk_size: int,
     overlap_size: int,
     do_reset: int,
+    app_settings: Settings = None,
 ):
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     project = await project_model.get_project_or_create_one(project_id=project_id)
@@ -140,11 +141,20 @@ async def _process_project_files(
             # Bug fix: continue instead of aborting the whole request
             continue
 
+        # Get strategy from app context/settings
+        _settings = get_settings()
+        chunk_strategy = getattr(_settings, "CHUNK_STRATEGY", "recursive")
+        
+        # Inject embedding client into process controller if exists
+        if hasattr(request.app, "embedding_client"):
+            process_controller.embedding_client = request.app.embedding_client
+
         file_chunks = process_controller.process_file_content(
             file_content=file_content,
             file_id=asset_file_id,
             chunk_size=chunk_size,
             overlap_size=overlap_size,
+            chunk_strategy=chunk_strategy,
         )
 
         if not file_chunks:
@@ -207,6 +217,7 @@ async def process_single_file(
         chunk_size=process_request.chunk_size,
         overlap_size=process_request.overlap_size,
         do_reset=process_request.do_reset,
+        app_settings=request.app.state.settings if hasattr(request.app.state, "settings") else None,
     )
 
 
@@ -225,4 +236,5 @@ async def process_all_files(
         chunk_size=process_request.chunk_size,
         overlap_size=process_request.overlap_size,
         do_reset=process_request.do_reset,
+        app_settings=request.app.state.settings if hasattr(request.app.state, "settings") else None,
     )

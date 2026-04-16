@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     FILE_DEFAULT_CHUNK_SIZE: int = 512_000  # streaming read chunk (bytes)
     FILE_PROCESS_CHUNK_SIZE: int = 512
     FILE_PROCESS_OVERLAP_SIZE: int = 50
+    CHUNK_STRATEGY: str = "recursive"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
