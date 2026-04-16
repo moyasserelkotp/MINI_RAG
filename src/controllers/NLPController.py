@@ -242,6 +242,44 @@ class NLPController(BaseController):
             logger.error("Entity Extraction Failed: %s", e)
 
 
+    async def _condense_query(self, query: str, session_messages: list) -> str:
+        """Use chat history to re-write a standalone query for better RAG retrieval."""
+        try:
+            if not session_messages:
+                return query
+
+            history_lines = []
+            for m in reversed(session_messages):
+                role = "User" if m.role == "user" else "Assistant"
+                history_lines.append(f"{role}: {m.text}")
+
+            history_text = "\n".join(history_lines)
+            condense_prompt = self.template_parser.get(
+                "rag", "condense_prompt", {"chat_history": history_text, "query": query}
+            )
+
+            if not condense_prompt:
+                return query
+
+            chat_history = [
+                self.generation_client.construct_prompt(
+                    "You are a query condensation assistant.", 
+                    self.generation_client.enums.SYSTEM.value
+                )
+            ]
+            
+            condensed = await asyncio.to_thread(
+                self.generation_client.generate_text, 
+                prompt=condense_prompt, 
+                chat_history=chat_history
+            )
+            
+            return condensed.strip() if condensed else query
+        except Exception as e:
+            logger.error("Query Condensation Failed: %s", e)
+            return query
+
+
     # ── Answer ────────────────────────────────────────────────────────────────
 
     async def answer_rag_question(
@@ -263,15 +301,40 @@ class NLPController(BaseController):
         use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
         use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
         use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
+        cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
 
-        # 0. Embed Query
-        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=query, document_type=DocumentTypeEnum.QUERY.value)
+        # 0. Database Session Initialization (Needed early for condensation)
+        session_obj = None
+        session_messages = []
+        session_model = None
+        message_model = None
+        
+        if session_id:
+            from models.SessionModel import SessionModel
+            from models.MessageModel import MessageModel
+            session_model = await SessionModel.create_instance(self.db_client)
+            message_model = await MessageModel.create_instance(self.db_client)
+            
+            if use_window or use_summary:
+                session_obj = await session_model.get_session_or_create_one(session_id, project.id)
+            if use_window and session_obj:
+                # History limit is set by WINDOW_MEMORY_K
+                session_messages = await message_model.get_messages_by_session(session_id, limit=window_k)
+
+        # 1. Query Condensation (Context Awareness)
+        search_query = query
+        if session_messages:
+            search_query = await self._condense_query(query, session_messages)
+            if search_query != query:
+                logger.info("Condensed query: '%s' -> '%s'", query, search_query)
+
+        # 2. Embed Search Query
+        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
         if not cache_vec:
-            logger.error("Failed to embed query.")
+            logger.error("Failed to embed search query.")
             return False, None, None
 
-        # 1. Semantic Cache Check
-        cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
+        # 3. Semantic Cache Check
         self._init_cache_collection(project.project_id)
         cache_col_name = self._get_cache_collection_name(project.project_id)
 
@@ -282,29 +345,14 @@ class NLPController(BaseController):
                     collection_name=cache_col_name, vector=cache_vec, limit=1, score_threshold=cache_threshold
                 )
                 if cached_results and len(cached_results) > 0:
-                    logger.info("Semantic Cache hit for query: %s", query)
+                    logger.info("Semantic Cache hit for query: %s", search_query)
                     cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
                     if cached_answer:
                         return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", []
             except Exception as e:
                 logger.error("Error accessing semantic cache: %s", e)
 
-        # 2. Database Session Initialization
-        session_obj = None
-        session_messages = []
-        session_model = None
-        message_model = None
-        if session_id:
-            from models.SessionModel import SessionModel
-            from models.MessageModel import MessageModel
-            session_model = await SessionModel.create_instance(self.db_client)
-            message_model = await MessageModel.create_instance(self.db_client)
-            if use_window or use_summary:
-                session_obj = await session_model.get_session_or_create_one(session_id, project.id)
-            if use_window and session_obj:
-                session_messages = await message_model.get_messages_by_session(session_id, limit=window_k)
-
-        # 3. Entity Memory Retrieval
+        # 4. Entity Memory Retrieval
         entities_text = ""
         if session_id and use_entity:
             try:
@@ -322,12 +370,12 @@ class NLPController(BaseController):
             except Exception as e:
                 logger.error("Error accessing entity memory: %s", e)
 
-        # 4. Vector DB Retrieval
+        # 5. Vector DB Retrieval
         retrieved_documents = []
         if use_vector:
             retrieved_documents = await asyncio.to_thread(
                 self.search_vector_db_collection,
-                project=project, text=query, limit=limit, use_hybrid=use_hybrid, score_threshold=score_threshold
+                project=project, text=search_query, limit=limit, use_hybrid=use_hybrid, score_threshold=score_threshold
             )
             if retrieved_documents is None:
                 return False, None, None
@@ -343,7 +391,7 @@ class NLPController(BaseController):
                         docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
                         reranked = await asyncio.to_thread(
                             cohere_client.rerank,
-                            model="rerank-english-v3.0", query=query, documents=docs_texts, top_n=min(limit, len(docs_texts))
+                            model="rerank-english-v3.0", query=search_query, documents=docs_texts, top_n=min(limit, len(docs_texts))
                         )
                         reranked_docs = []
                         for r in reranked.results:
@@ -354,7 +402,7 @@ class NLPController(BaseController):
                 except Exception as e:
                     logger.error("Cohere Rerank failed: %s", e)
 
-        # 5. Prompt Construction
+        # 6. Prompt Construction
         system_prompt = self.template_parser.get("rag", "system_prompt")
         
         if use_summary and session_obj and session_obj.summary:
@@ -363,14 +411,15 @@ class NLPController(BaseController):
         if use_entity and entities_text:
             system_prompt += f"\n\n[Important Retained Facts]:\n{entities_text}"
 
-        chat_history = [
+        chat_history_prompts = [
             self.generation_client.construct_prompt(prompt=system_prompt, role=self.generation_client.enums.SYSTEM.value)
         ]
 
         if use_window:
-            for msg in session_messages:
+            # We use reversed because get_messages_by_session usually returns latest messages first
+            for msg in reversed(session_messages):
                 role = self.generation_client.enums.USER.value if msg.role == "user" else self.generation_client.enums.ASSISTANT.value
-                chat_history.append(self.generation_client.construct_prompt(prompt=msg.text, role=role))
+                chat_history_prompts.append(self.generation_client.construct_prompt(prompt=msg.text, role=role))
 
         document_parts = []
         for idx, doc in enumerate(retrieved_documents or []):
@@ -388,14 +437,11 @@ class NLPController(BaseController):
         footer_prompt = self.template_parser.get("rag", "footer_prompt", {"query": query})
         full_prompt = "\n\n".join([documents_prompts, footer_prompt]) if documents_prompts else footer_prompt
 
-        # 6. Generate Answer
-        if not retrieved_documents and use_vector and not session_messages:
-            # Short circuit if vector search gives absolutely nothing AND no conversation exists.
-            return None, None, None
-        else:
-            answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history)
+        # 7. Generate Answer
+        # We no longer short-circuit based on retrieved_documents alone to allow greetings
+        answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history_prompts)
 
-        # 7. Post-generation Memory Saves
+        # 8. Post-generation Memory Saves
         if answer:
             # Semantic Cache Sub
             is_negative_answer = "cannot answer" in answer.lower() or "not contain the answer" in answer.lower()
@@ -426,4 +472,4 @@ class NLPController(BaseController):
             if session_id and use_entity:
                 asyncio.create_task(self._extract_and_save_entities(session_id, project, query, answer, cache_vec))
 
-        return answer, full_prompt, chat_history
+        return answer, full_prompt, chat_history_prompts

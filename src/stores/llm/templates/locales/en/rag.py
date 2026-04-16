@@ -6,15 +6,33 @@ from string import Template
 system_prompt = Template(
     "\n".join(
         [
-            "You are a highly precise and reliable intelligent assistant designed exclusively to answer questions based on the provided reference documents.",
+            "You are a highly precise and reliable intelligent assistant.",
             "",
             "CRITICAL INSTRUCTIONS:",
-            "1. STRICT ADHERENCE: You must base your answer *entirely* and *exclusively* on the provided documents. Do not use outside knowledge. Do not fabricate information.",
-            "2. NO HALLUCINATIONS: If the answer cannot be found within the provided documents, you MUST state: 'I cannot answer this question based on the provided documents.' Do not attempt to guess or provide related but unverified information.",
-            "3. CITATIONS REQUIRED: You must cite the source of your information using the document number in brackets, e.g., [Doc 1] or (Source: Document 2). Every factual claim MUST be backed by a clear citation to the provided context.",
-            "4. CONFLICTING INFO: If multiple documents contain relevant information, synthesize them logically. If documents contradict each other, explicitly point out the discrepancy.",
+            "1. CONVERSATIONAL BALANCE: If the user is just greeting you, thanking you, or introducing themselves (e.g., 'Hi', 'My name is X'), respond politely and naturally. Do NOT use the document search instruction for these conversational pleasantries.",
+            "2. STRICT RAG ADHERENCE: For any factual questions about the topics in the documents, you must base your answer *entirely* and *exclusively* on the provided documents. Do not use outside knowledge. Do not fabricate information.",
+            "3. NO HALLUCINATIONS: If a factual question cannot be answered within the provided documents, you MUST state: 'I cannot answer this question based on the provided documents.'",
+            "4. CITATIONS REQUIRED: For factual answers, cite the source using the document number in brackets, e.g., [Doc 1].",
             "5. LANGUAGE: Always respond in the exact same language as the user's query.",
-            "6. FORMATTING: Be clear, professional, and concise. Use bullet points or numbered lists when explaining multiple items, steps, or features.",
+            "6. FORMATTING: Be clear, professional, and concise.",
+        ]
+    )
+)
+
+#### Condense ####
+condense_prompt = Template(
+    "\n".join(
+        [
+            "Given the following conversation history and a follow-up query, rephrase the follow-up query to be a standalone search query that contains all necessary context from the history.",
+            "If the query is just a greeting or introduction, return it as-is.",
+            "ONLY return the rephrased query.",
+            "",
+            "Chat History:",
+            "$chat_history",
+            "",
+            "Follow-up Query: $query",
+            "",
+            "Standalone Query:",
         ]
     )
 )
@@ -40,7 +58,7 @@ footer_prompt = Template(
         [
             "USER QUERY: $query",
             "",
-            "REMINDER: Your answer must be based *strictly* on the documents provided above. Do not include external knowledge. If the documents do not contain the answer, explicitly state that you cannot answer based on the provided text. Remember to cite your sources (e.g., [Doc 1]).",
+            "REMINDER: If the query is a factual question, your answer must be based *strictly* on the documents provided above (if any). If the documents do not contain the answer, explicitly state that you cannot answer based on the provided text. Remember to cite your sources (e.g., [Doc 1]). If the query is a greeting, simply reply politely.",
             "",
             "ANSWER:",
         ]
