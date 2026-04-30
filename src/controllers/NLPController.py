@@ -6,6 +6,16 @@ import logging
 import json
 import hashlib
 import asyncio
+import time
+
+from utils.metrics import (
+    record_retrieval_latency,
+    record_chunks_retrieved,
+    record_generation_latency,
+    record_document_processed,
+    record_retrieval_error,
+    record_generation_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +145,12 @@ class NLPController(BaseController):
             record_ids=list(f_ids),
         )
 
+        # Record documents processed metric
+        try:
+            record_document_processed(project_id=project.project_id, count=len(f_texts))
+        except Exception:
+            logger.exception("Failed to record document processed metric")
+
         return True
 
     # ── Search ────────────────────────────────────────────────────────────────
@@ -161,6 +177,7 @@ class NLPController(BaseController):
             threshold = getattr(self.app_settings, "SEARCH_SCORE_THRESHOLD", 0.0) or 0.0
 
         try:
+            start = time.monotonic()
             if use_hybrid:
                 results = self.vectordb_client.hybrid_search(
                     collection_name=collection_name,
@@ -176,8 +193,20 @@ class NLPController(BaseController):
                     limit=limit,
                     score_threshold=threshold if threshold > 0 else None,
                 )
+            duration = time.monotonic() - start
+            # Record retrieval latency and chunks retrieved
+            try:
+                record_retrieval_latency(project_id=project.project_id, duration=duration)
+                if results:
+                    record_chunks_retrieved(project_id=project.project_id, count=len(results))
+            except Exception:
+                logger.exception("Failed to record retrieval metrics")
         except Exception as e:
             logger.error("Vector search failed: %s", e)
+            try:
+                record_retrieval_error(project_id=project.project_id)
+            except Exception:
+                logger.exception("Failed to record retrieval error metric")
             return None
 
         if results is None:
@@ -199,8 +228,23 @@ class NLPController(BaseController):
             chat_history = [
                 self.generation_client.construct_prompt("You are a summarization AI.", self.generation_client.enums.SYSTEM.value)
             ]
-            summary = await asyncio.to_thread(self.generation_client.generate_text, prompt=prompt, chat_history=chat_history)
-            
+            # Measure generation latency
+            try:
+                gen_start = time.monotonic()
+                summary = await asyncio.to_thread(self.generation_client.generate_text, prompt=prompt, chat_history=chat_history)
+                gen_duration = time.monotonic() - gen_start
+                try:
+                    record_generation_latency(backend=getattr(self.generation_client, 'generation_model_id', 'unknown'), duration=gen_duration)
+                except Exception:
+                    logger.exception("Failed to record generation latency")
+            except Exception as ge:
+                logger.error("Generation failed during summary: %s", ge)
+                try:
+                    record_generation_error(backend=getattr(self.generation_client, 'generation_model_id', 'unknown'))
+                except Exception:
+                    logger.exception("Failed to record generation error metric")
+                summary = None
+
             if summary:
                 await session_model.update_summary(session_id, summary)
                 # Reset counter to 0 to avoid continuous summarizing

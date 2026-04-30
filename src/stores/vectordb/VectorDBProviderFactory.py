@@ -10,12 +10,18 @@ class VectorDBProviderFactory:
 
     def create(self, provider: str):
         if provider == VectorDBEnums.QDRANT.value:
-            db_path = self.base_controller.get_database_path(
-                db_name=self.config.VECTOR_DB_PATH
-            )
+            # Use remote URL if available, otherwise use local path
+            db_url = getattr(self.config, "VECTOR_DB_URL", None)
+            db_path = None
+
+            if not db_url:
+                db_path = self.base_controller.get_database_path(
+                    db_name=self.config.VECTOR_DB_PATH
+                )
 
             return QdrantDBProvider(
                 db_path=db_path,
+                db_url=db_url,
                 distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
             )
         elif provider == VectorDBEnums.FAISS.value:

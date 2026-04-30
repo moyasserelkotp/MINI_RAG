@@ -11,9 +11,12 @@ logger = logging.getLogger(__name__)
 
 class QdrantDBProvider(VectorDBInterface):
 
-    def __init__(self, db_path: str, distance_method: str):
+    def __init__(
+        self, db_path: str = None, db_url: str = None, distance_method: str = None
+    ):
         self.client: Optional[QdrantClient] = None
         self.db_path = db_path
+        self.db_url = db_url
         self.distance_method = None
 
         if distance_method == DistanceMethodEnums.COSINE.value:
@@ -28,9 +31,29 @@ class QdrantDBProvider(VectorDBInterface):
 
     def connect(self):
         try:
-            self.client = QdrantClient(path=self.db_path)
+            if self.db_url:
+                # Connect to remote Qdrant server
+                self.client = QdrantClient(url=self.db_url)
+                logger.info("Connected to remote Qdrant at %s", self.db_url)
+            elif self.db_path:
+                # Connect to local Qdrant
+                try:
+                    self.client = QdrantClient(path=self.db_path)
+                except RuntimeError as re:
+                    # Common failure when the local storage folder is locked by another Qdrant instance
+                    logger.error(
+                        "Failed to connect to local Qdrant at %s: %s. "
+                        "This usually means the storage folder is already used by another Qdrant process. "
+                        "Run only one local Qdrant instance or switch to a Qdrant server (set db_url).",
+                        self.db_path,
+                        re,
+                    )
+                    raise
+                logger.info("Connected to local Qdrant at %s", self.db_path)
+            else:
+                raise ValueError("Either db_url or db_path must be provided")
         except Exception as e:
-            logger.error("Failed to connect to Qdrant at %s: %s", self.db_path, e)
+            logger.error("Failed to connect to Qdrant: %s", e)
             raise
 
     def disconnect(self):
@@ -54,9 +77,11 @@ class QdrantDBProvider(VectorDBInterface):
     def create_collection(
         self, collection_name: str, embedding_size: int, do_reset: bool = False
     ):
+        # If requested, remove any existing collection first
         if do_reset:
             self.delete_collection(collection_name=collection_name)
 
+        # If collection does not exist, create it with the provided embedding size
         if not self.is_collection_existed(collection_name):
             self.client.create_collection(
                 collection_name=collection_name,
@@ -67,6 +92,67 @@ class QdrantDBProvider(VectorDBInterface):
             )
             return True
 
+        # Collection exists — verify vector size matches requested embedding_size.
+        try:
+            info = self.client.get_collection(collection_name=collection_name)
+            existing_size = None
+
+            # Try several possible shapes of the returned object to extract vector size
+            try:
+                # qdrant_client may return a model with .result.vectors or .vectors
+                if hasattr(info, "result") and getattr(info, "result"):
+                    vectors = getattr(info.result, "vectors", None)
+                else:
+                    vectors = getattr(info, "vectors", None)
+
+                if isinstance(vectors, dict):
+                    # vectors is a mapping of named vector configs; take the first
+                    for v in vectors.values():
+                        if hasattr(v, "size"):
+                            existing_size = int(getattr(v, "size"))
+                            break
+                        if isinstance(v, dict) and "size" in v:
+                            existing_size = int(v.get("size"))
+                            break
+            except Exception:
+                existing_size = None
+
+            # If we could determine an existing size and it differs, handle accordingly
+            if existing_size is not None and existing_size != embedding_size:
+                msg = (
+                    f"Collection '{collection_name}' exists with embedding size {existing_size}, "
+                    f"but requested embedding size is {embedding_size}."
+                )
+                if do_reset:
+                    # Already removed above when do_reset True, but keep for safety
+                    self.delete_collection(collection_name=collection_name)
+                    self.client.create_collection(
+                        collection_name=collection_name,
+                        vectors_config=models.VectorParams(
+                            size=embedding_size,
+                            distance=self.distance_method,
+                        ),
+                    )
+                    logger.warning(
+                        "%s Recreated collection with new embedding size.", msg
+                    )
+                    return True
+                else:
+                    # Do not implicitly alter an existing collection with a different vector size
+                    logger.error(
+                        "%s To recreate with the new size set do_reset=True or delete the collection manually.",
+                        msg,
+                    )
+                    raise RuntimeError(msg)
+
+        except Exception as e:
+            # If we couldn't inspect the collection for some reason, log and raise
+            logger.error(
+                "Failed to verify existing collection '%s': %s", collection_name, e
+            )
+            raise
+
+        # Collection exists and matches the requested size (or we couldn't determine size) — nothing to do
         return False
 
     # ── Insert ────────────────────────────────────────────────────────────────

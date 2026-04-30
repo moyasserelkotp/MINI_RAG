@@ -1,29 +1,25 @@
-// Initialize MongoDB with admin user
+// Note: MongoDB automatically creates the root user via MONGO_INITDB_ROOT_USERNAME
+// and MONGO_INITDB_ROOT_PASSWORD environment variables during container startup.
+// This file is kept for reference but not needed for basic setup.
+//
+// If you need to create additional users or collections, uncomment and modify below:
 
-// Get environment variables or use defaults
-var rootUsername = process.env.MONGO_INITDB_ROOT_USERNAME || 'admin';
-var rootPassword = process.env.MONGO_INITDB_ROOT_PASSWORD || 'admin';
+// Example: Create an application database and user
+/*
+db = db.getSiblingDB('mini_rag_db');
+db.createCollection('projects');
+db.createCollection('chat_sessions');
+db.createCollection('data_chunks');
+db.createCollection('chat_messages');
+db.createCollection('assets');
 
-// Connect to admin database
-var adminDb = db.getSiblingDB('admin');
+// Create app-specific user (optional)
+db.createUser({
+  user: 'app_user',
+  pwd: 'app_password',
+  roles: [{ role: 'readWrite', db: 'mini_rag_db' }]
+});
 
-// Check if user already exists
-var existingUser = adminDb.getUser(rootUsername);
-if (existingUser != null) {
-    print('User ' + rootUsername + ' already exists');
-} else {
-    // Create the root user with admin privileges
-    adminDb.createUser({
-        user: rootUsername,
-        pwd: rootPassword,
-        roles: [
-            { role: 'root', db: 'admin' }
-        ]
-    });
-    print('Created user ' + rootUsername + ' with root privileges');
-}
-
-// Verify the user was created
-var user = adminDb.getUser(rootUsername);
-print('User details: ' + JSON.stringify(user));
+print('MongoDB initialization complete');
+*/
 

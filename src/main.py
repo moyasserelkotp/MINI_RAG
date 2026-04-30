@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
 from stores.llm.LLMProviderFactory import LLMProviderFactory
@@ -8,6 +9,8 @@ from stores.llm.templates.template_parser import TemplateParser
 from helpers.config import get_settings
 from routes import base, data, nlp
 from routes.projects import projects_router
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from utils.metrics import setup_metrics
 
 import logging
 
@@ -58,6 +61,13 @@ async def lifespan(app: FastAPI):
         default_language=settings.DEFAULT_LANG,
     )
     logger.info("Template parser ready (lang=%s)", settings.PRIMARY_LANG)
+    # Install Prometheus middleware and endpoint
+    try:
+        setup_metrics(app)
+        logger.info("Prometheus metrics middleware registered")
+    except Exception:
+        logger.exception("Failed to register Prometheus middleware")
+
     logger.info("Startup complete — ready to serve requests.")
 
     yield
@@ -92,3 +102,6 @@ app.include_router(base.base_router)
 app.include_router(data.data_router)
 app.include_router(nlp.nlp_router)
 app.include_router(projects_router)
+
+
+# Metrics endpoint is registered by utils.metrics.setup_metrics
