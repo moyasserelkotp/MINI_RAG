@@ -23,6 +23,8 @@ def _make_nlp_controller(request: Request) -> NLPController:
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser,
+        # FIX: pass the startup-cached Cohere client (None if rerank is disabled)
+        cohere_client=getattr(request.app, "cohere_client", None),
     )
 
 

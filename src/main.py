@@ -61,6 +61,19 @@ async def lifespan(app: FastAPI):
         default_language=settings.DEFAULT_LANG,
     )
     logger.info("Template parser ready (lang=%s)", settings.PRIMARY_LANG)
+
+    # Cohere rerank client (optional) — instantiated once to avoid per-request overhead
+    app.cohere_client = None
+    if getattr(settings, "USE_RERANK", False):
+        cohere_key = getattr(settings, "COHERE_API_KEY", None)
+        if cohere_key:
+            try:
+                import cohere as _cohere
+                app.cohere_client = _cohere.Client(cohere_key)
+                logger.info("Cohere rerank client initialised")
+            except Exception as exc:
+                logger.warning("Could not initialise Cohere client: %s", exc)
+
     logger.info("Startup complete — ready to serve requests.")
 
     yield
@@ -90,10 +103,10 @@ try:
 except Exception as e:
     logger.exception("Failed to register Prometheus middleware: %s", e)
 
-# CORS — adjust origins as needed for production
+# CORS — origins controlled via CORS_ALLOWED_ORIGINS in settings / .env
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_settings().CORS_ALLOWED_ORIGINS,  # FIX: no longer a wildcard '*'
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

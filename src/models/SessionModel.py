@@ -2,6 +2,11 @@ from .BaseDataModel import BaseDataModel
 from .db_schemes import ChatSession
 from .enums.DataBaseEnum import DataBaseEnum
 from bson.objectid import ObjectId
+from datetime import datetime  # FIX: moved from inside methods to module level
+
+# FIX: module-level set avoids repeated list_collection_names() on every request
+_INITIALIZED: bool = False
+
 
 class SessionModel(BaseDataModel):
 
@@ -16,11 +21,15 @@ class SessionModel(BaseDataModel):
         return instance
 
     async def init_collection(self):
+        global _INITIALIZED
+        if _INITIALIZED:
+            return  # FIX: skip DB round-trip after first successful init
         all_collections = await self.db_client.list_collection_names()
         if DataBaseEnum.COLLECTION_CHAT_SESSION_NAME.value not in all_collections:
             self.collection = self.db_client[DataBaseEnum.COLLECTION_CHAT_SESSION_NAME.value]
             await self.collection.create_index("session_id", name="session_id_idx", unique=True)
             await self.collection.create_index("project_id", name="project_id_idx")
+        _INITIALIZED = True
 
     async def create_session(self, session: ChatSession):
         result = await self.collection.insert_one(
@@ -38,14 +47,12 @@ class SessionModel(BaseDataModel):
         return ChatSession(**record)
 
     async def update_summary(self, session_id: str, new_summary: str):
-        from datetime import datetime
         await self.collection.update_one(
             {"session_id": session_id},
             {"$set": {"summary": new_summary, "updated_at": datetime.utcnow()}}
         )
 
     async def increment_message_count(self, session_id: str, amount: int = 1):
-        from datetime import datetime
         await self.collection.update_one(
             {"session_id": session_id},
             {"$inc": {"message_count": amount}, "$set": {"updated_at": datetime.utcnow()}}

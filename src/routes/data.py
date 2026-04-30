@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from helpers.config import get_settings, Settings
 from controllers import DataController, ProjectController, ProcessController
 import aiofiles
+import time
 
 from .schemes.data import ProcessRequest
 from models import ResponseSignal
@@ -10,6 +11,7 @@ from models.AssetModel import AssetModel
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from models.db_schemes import DataChunk, Asset
+from utils.metrics import record_chunking_latency
 
 import os
 from bson.objectid import ObjectId
@@ -130,6 +132,12 @@ async def _process_project_files(
     no_files = 0
     failed_files = []
 
+    # FIX: resolve settings and inject embedding client ONCE outside the loop
+    _settings = get_settings()
+    chunk_strategy = getattr(_settings, "CHUNK_STRATEGY", "recursive")
+    if hasattr(request.app, "embedding_client"):
+        process_controller.embedding_client = request.app.embedding_client
+
     if do_reset == 1:
         await chunk_model.delete_chunks_by_project_id(project_id=project.id)
 
@@ -142,14 +150,8 @@ async def _process_project_files(
             # Bug fix: continue instead of aborting the whole request
             continue
 
-        # Get strategy from app context/settings
-        _settings = get_settings()
-        chunk_strategy = getattr(_settings, "CHUNK_STRATEGY", "recursive")
-        
-        # Inject embedding client into process controller if exists
-        if hasattr(request.app, "embedding_client"):
-            process_controller.embedding_client = request.app.embedding_client
-
+        # FIX: time the chunking step and record to Prometheus
+        _chunk_start = time.monotonic()
         file_chunks = process_controller.process_file_content(
             file_content=file_content,
             file_id=asset_file_id,
@@ -157,6 +159,10 @@ async def _process_project_files(
             overlap_size=overlap_size,
             chunk_strategy=chunk_strategy,
         )
+        try:
+            record_chunking_latency(strategy=chunk_strategy, duration=time.monotonic() - _chunk_start)
+        except Exception:
+            pass
 
         if not file_chunks:
             logger.error("No chunks produced for file: %s", asset_file_id)

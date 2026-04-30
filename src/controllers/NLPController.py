@@ -15,6 +15,8 @@ from utils.metrics import (
     record_document_processed,
     record_retrieval_error,
     record_generation_error,
+    record_cache_hit,
+    record_cache_miss,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,13 +24,15 @@ logger = logging.getLogger(__name__)
 
 class NLPController(BaseController):
 
-    def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser):
+    def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser, cohere_client=None):
         super().__init__()
         self.db_client = db_client
         self.vectordb_client = vectordb_client
         self.generation_client = generation_client
         self.embedding_client = embedding_client
         self.template_parser = template_parser
+        # FIX: accept pre-built cohere client from app startup (avoids per-request instantiation)
+        self.cohere_client = cohere_client
         # Cache to avoid repeated VectorDB round-trips for collection existence
         self._initialized_collections: set = set()
 
@@ -392,7 +396,16 @@ class NLPController(BaseController):
                     logger.info("Semantic Cache hit for query: %s", search_query)
                     cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
                     if cached_answer:
+                        try:
+                            record_cache_hit(project_id=project.project_id)  # FIX: record hit metric
+                        except Exception:
+                            pass
                         return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", []
+                else:
+                    try:
+                        record_cache_miss(project_id=project.project_id)  # FIX: record miss metric
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.error("Error accessing semantic cache: %s", e)
 
@@ -428,10 +441,9 @@ class NLPController(BaseController):
             should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
             if should_rerank and retrieved_documents:
                 try:
-                    import cohere
-                    cohere_key = getattr(self.app_settings, "COHERE_API_KEY", None)
-                    if cohere_key:
-                        cohere_client = cohere.Client(cohere_key)
+                    # FIX: use pre-built client injected at startup instead of creating per-request
+                    cohere_client = self.cohere_client
+                    if cohere_client:
                         docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
                         reranked = await asyncio.to_thread(
                             cohere_client.rerank,
@@ -443,6 +455,8 @@ class NLPController(BaseController):
                             d.score = float(r.relevance_score)
                             reranked_docs.append(d)
                         retrieved_documents = reranked_docs
+                    else:
+                        logger.warning("USE_RERANK=True but cohere_client is not initialised; skipping rerank.")
                 except Exception as e:
                     logger.error("Cohere Rerank failed: %s", e)
 
@@ -489,15 +503,26 @@ class NLPController(BaseController):
         if answer:
             # Semantic Cache Sub
             is_negative_answer = "cannot answer" in answer.lower() or "not contain the answer" in answer.lower()
-            
+
             if use_cache and not is_negative_answer:
                 try:
-                    cache_id = int(hashlib.md5(query.encode()).hexdigest(), 16) % (2**63 - 1)
-                    asyncio.create_task(
+                    # FIX: use search_query (the condensed query) as the stored text so
+                    # the vector and stored text are always aligned for future lookups.
+                    cache_id = int(hashlib.md5(search_query.encode()).hexdigest(), 16) % (2**63 - 1)
+                    task = asyncio.create_task(
                         asyncio.to_thread(
                             self.vectordb_client.insert_one,
-                            collection_name=cache_col_name, text=query, vector=cache_vec, metadata={"answer": answer}, record_id=cache_id
+                            collection_name=cache_col_name,
+                            text=search_query,
+                            vector=cache_vec,
+                            metadata={"answer": answer},
+                            record_id=cache_id,
                         )
+                    )
+                    # FIX: log errors from fire-and-forget tasks instead of silently dropping them
+                    task.add_done_callback(
+                        lambda t: logger.error("Cache write failed: %s", t.exception())
+                        if t.exception() else None
                     )
                 except Exception:
                     pass
@@ -510,10 +535,24 @@ class NLPController(BaseController):
                 await session_model.increment_message_count(session_id, 2)
 
                 if use_summary and session_obj and (session_obj.message_count + 2 >= 10):
-                    asyncio.create_task(self._update_session_summary(session_id, project.id, session_model, message_model))
+                    summary_task = asyncio.create_task(
+                        self._update_session_summary(session_id, project.id, session_model, message_model)
+                    )
+                    # FIX: log errors from fire-and-forget summary task
+                    summary_task.add_done_callback(
+                        lambda t: logger.error("Session summary task failed: %s", t.exception())
+                        if t.exception() else None
+                    )
 
             # Entity Action Sub
             if session_id and use_entity:
-                asyncio.create_task(self._extract_and_save_entities(session_id, project, query, answer, cache_vec))
+                entity_task = asyncio.create_task(
+                    self._extract_and_save_entities(session_id, project, query, answer, cache_vec)
+                )
+                # FIX: log errors from fire-and-forget entity extraction task
+                entity_task.add_done_callback(
+                    lambda t: logger.error("Entity extraction task failed: %s", t.exception())
+                    if t.exception() else None
+                )
 
         return answer, full_prompt, chat_history_prompts

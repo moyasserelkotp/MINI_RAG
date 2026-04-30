@@ -1,6 +1,7 @@
 from .BaseController import BaseController
 from .ProjectController import ProjectController
 import os
+import logging
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.document_loaders import Docx2txtLoader
@@ -8,6 +9,8 @@ from langchain_community.document_loaders import CSVLoader
 from langchain_community.document_loaders import BSHTMLLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from models import ProcessingEnum
+
+logger = logging.getLogger(__name__)
 
 class ProcessController(BaseController):
 
@@ -61,19 +64,21 @@ class ProcessController(BaseController):
 
         try:
             return loader.load()
-        except Exception:
+        except Exception as e:
+            logger.error("Failed to load file '%s': %s", file_id, e)  # FIX: log before re-raise
             raise
 
     def process_file_content(self, file_content: list, file_id: str,
                             chunk_size: int=512, overlap_size: int=50, chunk_strategy: str="recursive"):
 
         if chunk_strategy in ("fixed", "overlapping", "recursive"):
-            from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
+            from langchain_text_splitters import CharacterTextSplitter
             if chunk_strategy == "fixed":
                 text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=0, separator="")
             elif chunk_strategy == "overlapping":
                 text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size, separator="")
             else:
+                # FIX: RecursiveCharacterTextSplitter already imported at top of file
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size, length_function=len)
 
         elif chunk_strategy == "semantic":

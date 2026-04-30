@@ -57,6 +57,12 @@ class QdrantDBProvider(VectorDBInterface):
             raise
 
     def disconnect(self):
+        # FIX: explicitly close the underlying HTTP session to release sockets
+        if self.client is not None:
+            try:
+                self.client.close()
+            except Exception:
+                pass
         self.client = None
 
     # ── Collection helpers ────────────────────────────────────────────────────

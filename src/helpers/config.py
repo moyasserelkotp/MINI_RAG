@@ -106,6 +106,29 @@ class Settings(BaseSettings):
     USE_VECTOR_MEMORY: bool = True
     USE_SEMANTIC_CACHE: bool = True
 
+    # ── CORS ──────────────────────────────────────────────────────────────────
+    # FIX: restrict allowed origins; wildcard '*' is unsafe in production
+    # Set to ["*"] only for local development; list specific domains in prod
+    CORS_ALLOWED_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://localhost:8080"]
+
+    @validator("CORS_ALLOWED_ORIGINS", pre=True)
+    def _split_cors_origins(cls, v):
+        if isinstance(v, str):
+            value = v.strip()
+            if not value:
+                return []
+            try:
+                import json as _json
+                decoded = _json.loads(value)
+                if isinstance(decoded, list):
+                    return [o.strip() for o in decoded if isinstance(o, str)]
+            except Exception:
+                pass
+            return [o.strip() for o in value.split(",") if o.strip()]
+        if isinstance(v, list):
+            return v
+        return v
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

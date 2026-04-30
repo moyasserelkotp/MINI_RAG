@@ -4,6 +4,9 @@ from .enums.DataBaseEnum import DataBaseEnum
 from bson.objectid import ObjectId
 from pymongo import InsertOne
 
+# FIX: module-level flag avoids repeated list_collection_names() on every request
+_INITIALIZED: bool = False
+
 
 class ChunkModel(BaseDataModel):
 
@@ -18,6 +21,9 @@ class ChunkModel(BaseDataModel):
         return instance    
 
     async def init_collection(self):
+        global _INITIALIZED
+        if _INITIALIZED:
+            return  # FIX: skip DB round-trip after first successful init
         all_collections = await self.db_client.list_collection_names()
         if DataBaseEnum.COLLECTION_CHUNK_NAME.value not in all_collections:
             self.collection = self.db_client[DataBaseEnum.COLLECTION_CHUNK_NAME.value]
@@ -26,6 +32,7 @@ class ChunkModel(BaseDataModel):
                 await self.collection.create_index(
                     index["key"], name=index["name"], unique=index["unique"]
                 )
+        _INITIALIZED = True
 
     async def create_chunk(self, chunk: DataChunk):
         result = await self.collection.insert_one(
@@ -68,9 +75,10 @@ class ChunkModel(BaseDataModel):
     ):
         records = (
             await self.collection.find({"chunk_project_id": project_id})
+            .sort("chunk_order", 1)                  # FIX: deterministic ordering
             .skip((page_no - 1) * page_size)
             .limit(page_size)
-            .to_list(length=None)
+            .to_list(length=page_size)               # FIX: explicit length instead of None
         )
 
         return [DataChunk(**record) for record in records]

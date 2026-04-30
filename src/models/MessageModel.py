@@ -2,6 +2,10 @@ from .BaseDataModel import BaseDataModel
 from .db_schemes import ChatMessage
 from .enums.DataBaseEnum import DataBaseEnum
 
+# FIX: module-level flag avoids repeated list_collection_names() on every request
+_INITIALIZED: bool = False
+
+
 class MessageModel(BaseDataModel):
 
     def __init__(self, db_client: object):
@@ -15,10 +19,14 @@ class MessageModel(BaseDataModel):
         return instance
 
     async def init_collection(self):
+        global _INITIALIZED
+        if _INITIALIZED:
+            return  # FIX: skip DB round-trip after first successful init
         all_collections = await self.db_client.list_collection_names()
         if DataBaseEnum.COLLECTION_CHAT_MESSAGE_NAME.value not in all_collections:
             self.collection = self.db_client[DataBaseEnum.COLLECTION_CHAT_MESSAGE_NAME.value]
             await self.collection.create_index("session_id", name="session_id_idx")
+        _INITIALIZED = True
 
     async def create_message(self, message: ChatMessage):
         result = await self.collection.insert_one(
