@@ -78,7 +78,8 @@ class Settings(BaseSettings):
 
     # ── Vector DB ─────────────────────────────────────────────────────────────
     VECTOR_DB_BACKEND: str
-    VECTOR_DB_PATH: str
+    VECTOR_DB_URL: Optional[str] = None
+    VECTOR_DB_PATH: str = "qdrant_db"
     VECTOR_DB_DISTANCE_METHOD: Optional[str] = "cosine"
     VECTOR_DB_COLLECTION_PREFIX: str = "collection"
     PINECONE_API_KEY: Optional[str] = None

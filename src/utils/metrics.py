@@ -80,16 +80,31 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def setup_metrics(app: FastAPI):
+def add_prometheus_middleware(app: FastAPI):
     """
-    Setup Prometheus metrics middleware and endpoint
+    Add Prometheus middleware to the app.
+    MUST be called before the app starts serving requests.
     """
-    # Add Prometheus middleware
     app.add_middleware(PrometheusMiddleware)
 
+
+def register_metrics_endpoint(app: FastAPI):
+    """
+    Register the /metrics endpoint.
+    Can be called after middleware is registered.
+    """
     @app.get("/metrics", include_in_schema=False)
     def metrics():
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def setup_metrics(app: FastAPI):
+    """
+    Setup Prometheus metrics middleware and endpoint.
+    Calls both middleware addition and endpoint registration.
+    """
+    add_prometheus_middleware(app)
+    register_metrics_endpoint(app)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

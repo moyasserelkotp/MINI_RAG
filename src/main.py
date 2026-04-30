@@ -10,7 +10,7 @@ from helpers.config import get_settings
 from routes import base, data, nlp
 from routes.projects import projects_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from utils.metrics import setup_metrics
+from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
 
 import logging
 
@@ -61,13 +61,6 @@ async def lifespan(app: FastAPI):
         default_language=settings.DEFAULT_LANG,
     )
     logger.info("Template parser ready (lang=%s)", settings.PRIMARY_LANG)
-    # Install Prometheus middleware and endpoint
-    try:
-        setup_metrics(app)
-        logger.info("Prometheus metrics middleware registered")
-    except Exception:
-        logger.exception("Failed to register Prometheus middleware")
-
     logger.info("Startup complete — ready to serve requests.")
 
     yield
@@ -89,6 +82,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add Prometheus middleware BEFORE the app starts
+# This must happen before any requests are processed
+try:
+    add_prometheus_middleware(app)
+    logger.info("Prometheus middleware registered")
+except Exception as e:
+    logger.exception("Failed to register Prometheus middleware: %s", e)
+
 # CORS — adjust origins as needed for production
 app.add_middleware(
     CORSMiddleware,
@@ -103,5 +104,9 @@ app.include_router(data.data_router)
 app.include_router(nlp.nlp_router)
 app.include_router(projects_router)
 
-
-# Metrics endpoint is registered by utils.metrics.setup_metrics
+# Register the /metrics endpoint after middleware is set up
+try:
+    register_metrics_endpoint(app)
+    logger.info("Prometheus /metrics endpoint registered")
+except Exception as e:
+    logger.exception("Failed to register /metrics endpoint: %s", e)
