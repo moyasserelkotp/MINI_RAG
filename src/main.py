@@ -14,12 +14,26 @@ from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
 
 import logging
 
+# ── Configure logging based on settings ──────────────────────────────────
+settings = get_settings()
+
+# Convert string log level to logging level
+log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# Log startup information
+logger.info("=" * 70)
+logger.info("Starting MINI-RAG Application")
+logger.info("=" * 70)
+if settings.DEBUG:
+    logger.warning("DEBUG MODE ENABLED - Only use this for development!")
+logger.info("Log Level: %s", settings.LOG_LEVEL)
 
 
 @asynccontextmanager
@@ -93,7 +107,17 @@ app = FastAPI(
     description="A RAG-powered question-answering API for data.",
     version="0.2",
     lifespan=lifespan,
+    debug=settings.DEBUG,  # Enable/disable FastAPI debug mode
 )
+
+# Store settings in app state for access in routes
+app.state.DEBUG = settings.DEBUG
+app.state.LOG_LEVEL = settings.LOG_LEVEL
+
+if settings.DEBUG:
+    logger.warning("⚠️  FastAPI DEBUG MODE ENABLED ⚠️ ")
+    logger.warning("This should ONLY be used for development!")
+    logger.warning("Sensitive information may be exposed in error messages.")
 
 # Add Prometheus middleware BEFORE the app starts
 # This must happen before any requests are processed

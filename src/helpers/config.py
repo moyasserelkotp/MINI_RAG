@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "mini-RAG-App"
     APP_VERSION: str = "0.1"
 
-    # ── File upload ──────────────────────────────────────────────────────────
+    # ── Application Settings ────────────────────────────────────────────────
+    DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     FILE_ALLOWED_TYPES: Union[List[str], str] = []
     FILE_MAX_SIZE: int = 0          # bytes (already in bytes, no extra scaling)
     FILE_DEFAULT_CHUNK_SIZE: int = 512_000  # streaming read chunk (bytes)
