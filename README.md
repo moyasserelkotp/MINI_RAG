@@ -132,7 +132,93 @@ open http://localhost:8000/docs
 
 ---
 
-## 📝 Basic Usage
+## � Debug & Logging Configuration
+
+### Environment Variables
+
+Control application behavior with these settings in `.env`:
+
+```env
+# Enable debug mode (development only!)
+DEBUG=False                 # True for development, False for production
+
+# Logging verbosity
+LOG_LEVEL=INFO             # Options: DEBUG, INFO, WARNING, ERROR
+```
+
+### Log Levels Explained
+
+| Level | Use Case | Examples |
+|-------|----------|----------|
+| **DEBUG** | Development & troubleshooting | All API calls, embedding operations, database queries |
+| **INFO** | Normal operations | Application startup, user queries, successful operations |
+| **WARNING** | Potential issues | Missing optional configs, fallback behaviors |
+| **ERROR** | Problems that need attention | Failed API calls, connection errors |
+
+### Development Setup
+
+For active development with detailed logging:
+
+```env
+DEBUG=True
+LOG_LEVEL=DEBUG
+```
+
+**Sample output:**
+```
+2024-05-08 10:30:15 | DEBUG    | fastapi.access — GET /api/v1/info HTTP/1.1 200 OK
+2024-05-08 10:30:16 | DEBUG    | main — Embedding query: "tourist attractions"
+2024-05-08 10:30:16 | DEBUG    | main — Vector search found 5 results
+2024-05-08 10:30:17 | INFO     | main — Chat response generated in 1.2s
+```
+
+### Production Setup
+
+For production stability with minimal logging:
+
+```env
+DEBUG=False
+LOG_LEVEL=INFO
+```
+
+### View Logs in Docker
+
+```bash
+# Real-time logs
+docker-compose -f docker/docker-compose.yml logs -f minirag
+
+# Last 100 lines
+docker-compose -f docker/docker-compose.yml logs --tail=100 minirag
+
+# Export logs to file
+docker-compose -f docker/docker-compose.yml logs minirag > app.log
+```
+
+### Troubleshooting
+
+**Issue: Too much logging output?**
+```env
+LOG_LEVEL=WARNING      # Reduce noise, only show issues
+```
+
+**Issue: Need more details for debugging?**
+```env
+DEBUG=True
+LOG_LEVEL=DEBUG        # Maximum verbosity
+```
+
+**Issue: Want to track specific errors?**
+```bash
+# Filter logs by level
+docker-compose -f docker/docker-compose.yml logs minirag | grep ERROR
+
+# Filter by component
+docker-compose -f docker/docker-compose.yml logs minirag | grep "NLPController"
+```
+
+---
+
+## �📝 Basic Usage
 
 ### 1️⃣ Upload Documents
 
