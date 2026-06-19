@@ -112,6 +112,20 @@ class Settings(BaseSettings):
     USE_VECTOR_MEMORY: bool = True
     USE_SEMANTIC_CACHE: bool = True
 
+    # ── Celery / RabbitMQ ─────────────────────────────────────────────────────
+    RABBITMQ_DEFAULT_USER: str = "minirag"
+    RABBITMQ_DEFAULT_PASS: str = "minirag_rabbit_2222"
+    RABBITMQ_HOST: str = "rabbitmq"
+    RABBITMQ_PORT: str = "5672"
+    RABBITMQ_VHOST: str = "minirag_vhost"
+
+    # ── Celery / Redis ────────────────────────────────────────────────────────
+    REDIS_HOST: str = "redis"
+    REDIS_PORT: str = "6379"
+    REDIS_PASSWORD: str = "minirag_redis_2222"
+    REDIS_CELERY_DB: str = "1"   # DB index for Celery results
+    REDIS_CACHE_DB: str = "0"    # DB index for app-level cache
+
     # ── CORS ──────────────────────────────────────────────────────────────────
     # FIX: restrict allowed origins; wildcard '*' is unsafe in production
     # Set to ["*"] only for local development; list specific domains in prod

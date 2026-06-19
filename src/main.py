@@ -9,6 +9,7 @@ from stores.llm.templates.template_parser import TemplateParser
 from helpers.config import get_settings
 from routes import base, data, nlp
 from routes.projects import projects_router
+from routes.tasks import tasks_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
 
@@ -153,6 +154,7 @@ app.include_router(base.base_router)
 app.include_router(data.data_router)
 app.include_router(nlp.nlp_router)
 app.include_router(projects_router)
+app.include_router(tasks_router)
 
 # Register the /metrics endpoint after middleware is set up
 try:

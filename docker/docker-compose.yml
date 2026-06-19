@@ -1,5 +1,6 @@
 services:
-  # FastAPI Application
+
+  # ── FastAPI Application ────────────────────────────────────────────────────
   fastapi:
     build:
       context: ..
@@ -15,10 +16,117 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - ./env/.env.app
 
-  # Nginx Service
+  # ── Celery Worker — Processing queue (chunking) ───────────────────────────
+  celery-worker-processing:
+    build:
+      context: ..
+      dockerfile: docker/celery/Dockerfile
+    container_name: celery-worker-processing
+    command: >
+      celery -A celery_app.celery_config:celery_app worker
+      --loglevel=info
+      --queues=processing
+      --concurrency=2
+      --hostname=processing-worker@%h
+      --max-tasks-per-child=50
+    volumes:
+      - fastapi_data:/app/assets
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./env/.env.app
+
+  # ── Celery Worker — Indexing queue (embeddings + vector DB) ───────────────
+  celery-worker-indexing:
+    build:
+      context: ..
+      dockerfile: docker/celery/Dockerfile
+    container_name: celery-worker-indexing
+    command: >
+      celery -A celery_app.celery_config:celery_app worker
+      --loglevel=info
+      --queues=indexing
+      --concurrency=1
+      --hostname=indexing-worker@%h
+      --max-tasks-per-child=20
+    volumes:
+      - fastapi_data:/app/assets
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    env_file:
+      - ./env/.env.app
+
+  # ── Celery Beat — Periodic task scheduler (optional) ─────────────────────
+  celery-beat:
+    build:
+      context: ..
+      dockerfile: docker/celery/Dockerfile
+    container_name: celery-beat
+    command: >
+      celery -A celery_app.celery_config:celery_app beat
+      --loglevel=info
+      --scheduler celery.beat:PersistentScheduler
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./env/.env.app
+
+  # ── Flower — Celery monitoring UI ─────────────────────────────────────────
+  flower:
+    build:
+      context: ..
+      dockerfile: docker/celery/Dockerfile
+    container_name: flower
+    command: >
+      celery -A celery_app.celery_config:celery_app flower
+      --port=5555
+      --broker_api=http://${RABBITMQ_DEFAULT_USER:-minirag}:${RABBITMQ_DEFAULT_PASS:-minirag_rabbit_2222}@rabbitmq:15672/api/
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower_admin_2222}
+    ports:
+      - "5555:5555"
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./env/.env.app
+
+  # ── Nginx Service ─────────────────────────────────────────────────────────
   nginx:
     image: nginx:stable-alpine3.20-perl
     container_name: nginx
@@ -32,8 +140,7 @@ services:
       - backend
     restart: always
 
-
-  # MongoDB
+  # ── MongoDB ───────────────────────────────────────────────────────────────
   mongodb:
     image: mongo:8.0
     container_name: mongodb
@@ -54,7 +161,7 @@ services:
       retries: 5
       start_period: 10s
 
-  # Qdrant (VectorDB)
+  # ── Qdrant (VectorDB) ─────────────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:v1.13.6
     container_name: qdrant
@@ -67,7 +174,59 @@ services:
       - backend
     restart: always
 
-  # Prometheus Monitoring
+  # ── RabbitMQ (Message Broker) ─────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:4.1.2-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+    env_file:
+      - ./env/.env.rabbitmq
+    networks:
+      - backend
+    restart: always
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Redis (Results Backend & Cache) ──────────────────────────────────────
+  redis:
+    image: redis:8.0.3-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    env_file:
+      - ./env/.env.redis
+    networks:
+      - backend
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-minirag_redis_2222}", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--requirepass"
+      - "${REDIS_PASSWORD:-minirag_redis_2222}"
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+
+  # ── Prometheus Monitoring ─────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v3.3.0
     container_name: prometheus
@@ -86,7 +245,7 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
 
-  # Grafana Dashboard
+  # ── Grafana Dashboard ─────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:11.6.0-ubuntu
     container_name: grafana
@@ -102,8 +261,7 @@ services:
       - backend
     restart: always
 
-
-  # Node Exporter for system metrics
+  # ── Node Exporter for system metrics ─────────────────────────────────────
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
@@ -122,7 +280,7 @@ services:
       - backend
     restart: always
 
-  # MongoDB Exporter for Mongo metrics
+  # ── MongoDB Exporter for Mongo metrics ───────────────────────────────────
   mongodb-exporter:
     image: percona/mongodb_exporter:0.50.0
     container_name: mongodb-exporter
@@ -136,6 +294,7 @@ services:
       - backend
     restart: always
 
+
 networks:
   backend:
     driver: bridge
@@ -144,5 +303,7 @@ volumes:
   fastapi_data:
   mongodb_data:
   qdrant_data:
+  rabbitmq_data:
+  redis_data:
   prometheus_data:
   grafana_data:
