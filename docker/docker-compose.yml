@@ -1,6 +1,6 @@
 services:
 
-  # ── FastAPI Application ────────────────────────────────────────────────────
+  # FastAPI Application 
   fastapi:
     build:
       context: ..
@@ -23,7 +23,7 @@ services:
     env_file:
       - ./env/.env.app
 
-  # ── Celery Worker — Processing queue (chunking) ───────────────────────────
+  # Celery Worker — Processing queue (chunking)
   celery-worker-processing:
     build:
       context: ..
@@ -55,7 +55,7 @@ services:
     env_file:
       - ./env/.env.app
 
-  # ── Celery Worker — Indexing queue (embeddings + vector DB) ───────────────
+  # Celery Worker — Indexing queue (embeddings + vector DB)
   celery-worker-indexing:
     build:
       context: ..
@@ -89,7 +89,7 @@ services:
     env_file:
       - ./env/.env.app
 
-  # ── Celery Beat — Periodic task scheduler (optional) ─────────────────────
+  # Celery Beat — Periodic task scheduler (optional)
   celery-beat:
     build:
       context: ..
@@ -110,7 +110,7 @@ services:
     env_file:
       - ./env/.env.app
 
-  # ── Flower — Celery monitoring UI ─────────────────────────────────────────
+  # Flower — Celery monitoring UI
   flower:
     build:
       context: ..
@@ -119,8 +119,8 @@ services:
     command: >
       celery -A celery_app.celery_config:celery_app flower
       --port=5555
-      --broker_api=http://${RABBITMQ_DEFAULT_USER?Error: RABBITMQ_DEFAULT_USER not set}:${RABBITMQ_DEFAULT_PASS?Error: RABBITMQ_DEFAULT_PASS not set}@rabbitmq:15672/api/
-      --basic_auth=${FLOWER_USER?Error: FLOWER_USER not set}:${FLOWER_PASSWORD?Error: FLOWER_PASSWORD not set}
+      --broker_api=http://${RABBITMQ_DEFAULT_USER:-minirag}:${RABBITMQ_DEFAULT_PASS:-minirag_rabbit_2222}@rabbitmq:15672/api/
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower_admin_2222}
     ports:
       - "5555:5555"
     networks:
@@ -134,7 +134,7 @@ services:
     env_file:
       - ./env/.env.app
 
-  # ── Nginx Service ─────────────────────────────────────────────────────────
+  # Nginx Service
   nginx:
     image: nginx:stable-alpine3.20-perl
     container_name: nginx
@@ -148,7 +148,7 @@ services:
       - backend
     restart: always
 
-  # ── MongoDB ───────────────────────────────────────────────────────────────
+  # MongoDB
   mongodb:
     image: mongo:8.0
     container_name: mongodb
@@ -169,7 +169,7 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── Qdrant (VectorDB) ─────────────────────────────────────────────────────
+  # Qdrant (VectorDB)
   qdrant:
     image: qdrant/qdrant:v1.13.6
     container_name: qdrant
@@ -182,7 +182,7 @@ services:
       - backend
     restart: always
 
-  # ── RabbitMQ (Message Broker) ─────────────────────────────────────────────
+  # RabbitMQ (Message Broker)
   rabbitmq:
     image: rabbitmq:4.1.2-management-alpine
     container_name: rabbitmq
@@ -204,7 +204,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── Redis (Results Backend & Cache) ──────────────────────────────────────
+  # Redis (Results Backend & Cache)
   redis:
     image: redis:8.0.3-alpine
     container_name: redis
@@ -218,7 +218,7 @@ services:
       - backend
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD?Error: REDIS_PASSWORD not set} redis-cli ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD:-minirag_redis_2222} redis-cli ping"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -228,13 +228,13 @@ services:
       - "--appendonly"
       - "yes"
       - "--requirepass"
-      - "${REDIS_PASSWORD?Error: REDIS_PASSWORD not set}"
+      - "${REDIS_PASSWORD:-minirag_redis_2222}"
       - "--maxmemory"
       - "512mb"
       - "--maxmemory-policy"
       - "allkeys-lru"
 
-  # ── Prometheus Monitoring ─────────────────────────────────────────────────
+  # Prometheus Monitoring
   prometheus:
     image: prom/prometheus:v3.3.0
     container_name: prometheus
@@ -253,7 +253,7 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
 
-  # ── Grafana Dashboard ─────────────────────────────────────────────────────
+  # Grafana Dashboard
   grafana:
     image: grafana/grafana:11.6.0-ubuntu
     container_name: grafana
@@ -269,7 +269,7 @@ services:
       - backend
     restart: always
 
-  # ── Node Exporter for system metrics ─────────────────────────────────────
+  # Node Exporter for system metrics
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
@@ -288,7 +288,7 @@ services:
       - backend
     restart: always
 
-  # ── MongoDB Exporter for Mongo metrics ───────────────────────────────────
+  # MongoDB Exporter for Mongo metrics
   mongodb-exporter:
     image: percona/mongodb_exporter:0.50.0
     container_name: mongodb-exporter
