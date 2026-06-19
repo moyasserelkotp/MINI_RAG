@@ -51,11 +51,16 @@ def _result_backend() -> str:
 _default_exchange   = Exchange("default",    type="direct", durable=True)
 _processing_exchange = Exchange("processing", type="direct", durable=True)
 _indexing_exchange   = Exchange("indexing",   type="direct", durable=True)
+_dlx_exchange        = Exchange("dlx",        type="direct", durable=True)
 
 TASK_QUEUES = (
-    Queue("default",    _default_exchange,    routing_key="default"),
-    Queue("processing", _processing_exchange, routing_key="processing"),
-    Queue("indexing",   _indexing_exchange,   routing_key="indexing"),
+    Queue("default",    _default_exchange,    routing_key="default",
+          queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
+    Queue("processing", _processing_exchange, routing_key="processing",
+          queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
+    Queue("indexing",   _indexing_exchange,   routing_key="indexing",
+          queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
+    Queue("dead_letters", _dlx_exchange,      routing_key="dead_letter"),
 )
 
 # ── Task routing rules ───────────────────────────────────────────────────────

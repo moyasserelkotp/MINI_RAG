@@ -29,6 +29,10 @@ services:
       context: ..
       dockerfile: docker/celery/Dockerfile
     container_name: celery-worker-processing
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     command: >
       celery -A celery_app.celery_config:celery_app worker
       --loglevel=info
@@ -57,6 +61,10 @@ services:
       context: ..
       dockerfile: docker/celery/Dockerfile
     container_name: celery-worker-indexing
+    deploy:
+      resources:
+        limits:
+          memory: 4G
     command: >
       celery -A celery_app.celery_config:celery_app worker
       --loglevel=info
@@ -111,8 +119,8 @@ services:
     command: >
       celery -A celery_app.celery_config:celery_app flower
       --port=5555
-      --broker_api=http://${RABBITMQ_DEFAULT_USER:-minirag}:${RABBITMQ_DEFAULT_PASS:-minirag_rabbit_2222}@rabbitmq:15672/api/
-      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower_admin_2222}
+      --broker_api=http://${RABBITMQ_DEFAULT_USER?Error: RABBITMQ_DEFAULT_USER not set}:${RABBITMQ_DEFAULT_PASS?Error: RABBITMQ_DEFAULT_PASS not set}@rabbitmq:15672/api/
+      --basic_auth=${FLOWER_USER?Error: FLOWER_USER not set}:${FLOWER_PASSWORD?Error: FLOWER_PASSWORD not set}
     ports:
       - "5555:5555"
     networks:
@@ -210,7 +218,7 @@ services:
       - backend
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-minirag_redis_2222}", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD?Error: REDIS_PASSWORD not set} redis-cli ping"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -220,7 +228,7 @@ services:
       - "--appendonly"
       - "yes"
       - "--requirepass"
-      - "${REDIS_PASSWORD:-minirag_redis_2222}"
+      - "${REDIS_PASSWORD?Error: REDIS_PASSWORD not set}"
       - "--maxmemory"
       - "512mb"
       - "--maxmemory-policy"
