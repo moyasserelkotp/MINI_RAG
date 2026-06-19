@@ -67,3 +67,20 @@ class AssetModel(BaseDataModel):
             {"asset_project_id": self._resolve_project_id(asset_project_id)}
         )
         return result.deleted_count
+
+    async def get_asset_by_id(self, asset_id: str):
+        """Fetch a single asset by its MongoDB ObjectId string."""
+        try:
+            record = await self.collection.find_one({"_id": ObjectId(asset_id)})
+            return Asset(**record) if record else None
+        except Exception:
+            return None
+
+    async def delete_asset_by_id(self, asset_id: str) -> bool:
+        """Delete a single asset document by its ObjectId. Returns True if deleted."""
+        try:
+            result = await self.collection.delete_one({"_id": ObjectId(asset_id)})
+            return result.deleted_count == 1
+        except Exception:
+            return False
+

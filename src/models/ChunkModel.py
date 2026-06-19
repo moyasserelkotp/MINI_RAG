@@ -70,6 +70,12 @@ class ChunkModel(BaseDataModel):
 
         return result.deleted_count
 
+    async def delete_chunks_by_asset_id(self, asset_id: ObjectId) -> int:
+        """Delete all chunks that belong to a specific asset. Returns deleted count."""
+        oid = ObjectId(asset_id) if isinstance(asset_id, str) else asset_id
+        result = await self.collection.delete_many({"chunk_asset_id": oid})
+        return result.deleted_count
+
     async def get_project_chunks(
         self, project_id: ObjectId, page_no: int = 1, page_size: int = 50
     ):
@@ -82,3 +88,4 @@ class ChunkModel(BaseDataModel):
         )
 
         return [DataChunk(**record) for record in records]
+

@@ -182,7 +182,7 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     nlp_controller = _make_nlp_controller(request)
-    answer, full_prompt, chat_history = await nlp_controller.answer_rag_question(
+    answer, full_prompt, chat_history, sources, cached = await nlp_controller.answer_rag_question(
         project=project,
         query=search_request.text,
         limit=search_request.limit,
@@ -205,6 +205,9 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
             content={
                 "signal": ResponseSignal.RAG_ANSWER_SUCCESS.value,
                 "answer": "No relevant documents found for your query. Please try a different question or lower the score threshold.",
+                "sources": [],
+                "cached": False,
+                "session_id": search_request.session_id,
                 "full_prompt": None,
                 "chat_history": None,
             },
@@ -215,8 +218,8 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "signal": ResponseSignal.RAG_ANSWER_ERROR.value, 
-                "error": "LLM generation failed."
+                "signal": ResponseSignal.RAG_ANSWER_ERROR.value,
+                "error": "LLM generation failed.",
             },
         )
 
@@ -224,8 +227,8 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "signal": ResponseSignal.RAG_ANSWER_ERROR.value, 
-                "error": answer
+                "signal": ResponseSignal.RAG_ANSWER_ERROR.value,
+                "error": answer,
             },
         )
 
@@ -233,6 +236,9 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
         content={
             "signal": ResponseSignal.RAG_ANSWER_SUCCESS.value,
             "answer": answer,
+            "sources": sources,
+            "cached": cached,
+            "session_id": search_request.session_id,
             "full_prompt": full_prompt,
             "chat_history": chat_history,
         }

@@ -61,3 +61,26 @@ class DataController(BaseController):
         # Keep only word characters and dots; replace spaces with underscore
         cleaned = re.sub(r"[^\w.]", "", orig_file_name.strip())
         return cleaned.replace(" ", "_")
+
+    def delete_file_by_name(self, file_id: str) -> bool:
+        """Remove the physical file from every known project folder.
+
+        Iterates through project directories under ``self.files_dir`` and
+        deletes the first matching file. Returns True if deleted, False if not found.
+        """
+        if not os.path.isdir(self.files_dir):
+            return False
+
+        for project_dir in os.listdir(self.files_dir):
+            candidate = os.path.join(self.files_dir, project_dir, file_id)
+            if os.path.isfile(candidate):
+                try:
+                    os.remove(candidate)
+                    return True
+                except OSError as e:
+                    import logging as _log
+                    _log.getLogger(__name__).error("Failed to delete file %s: %s", candidate, e)
+                    return False
+        return False
+
+

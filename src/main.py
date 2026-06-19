@@ -103,11 +103,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Mini RAG",
-    description="A RAG-powered question-answering API for data.",
-    version="0.2",
+    title="MINI- RAG",
+    description=(
+        "Production-grade Retrieval-Augmented Generation API for the  domain. "
+        "Transforms static documents (travel guides, attraction info, hospitality data) "
+        "into an intelligent, context-aware AI expert with semantic memory, "
+        "multilingual reasoning (Arabic + English), and enterprise-grade observability."
+    ),
+    version="1.0.0",
+    contact={
+        "name": "MINI- RAG",
+        "url": "https://github.com/your-org/mini--rag",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
     lifespan=lifespan,
-    debug=settings.DEBUG,  # Enable/disable FastAPI debug mode
+    debug=settings.DEBUG,
 )
 
 # Store settings in app state for access in routes

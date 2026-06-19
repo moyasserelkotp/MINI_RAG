@@ -16,6 +16,37 @@ async def welcome(app_settings: Settings = Depends(get_settings)):
     }
 
 
+@base_router.get("/info", summary="Application info")
+async def info(request: Request, app_settings: Settings = Depends(get_settings)):
+    """Returns app name, version, active backends, and enabled memory features.
+    Referenced in Quick Start guide and Docker healthchecks."""
+    environment = "development" if app_settings.DEBUG else "production"
+    return {
+        "status": "ok",
+        "app_name": app_settings.APP_NAME,
+        "version": app_settings.APP_VERSION,
+        "environment": environment,
+        "backends": {
+            "generation": app_settings.GENERATION_BACKEND,
+            "generation_model": app_settings.GENERATION_MODEL_ID,
+            "embedding": app_settings.EMBEDDING_BACKEND,
+            "embedding_model": app_settings.EMBEDDING_MODEL_ID,
+            "embedding_dimensions": app_settings.EMBEDDING_MODEL_SIZE,
+            "vector_db": app_settings.VECTOR_DB_BACKEND,
+        },
+        "memory_features": {
+            "semantic_cache": app_settings.USE_SEMANTIC_CACHE,
+            "window_memory": app_settings.USE_WINDOW_MEMORY,
+            "summary_memory": app_settings.USE_SUMMARY_MEMORY,
+            "entity_memory": app_settings.USE_ENTITY_MEMORY,
+            "vector_memory": app_settings.USE_VECTOR_MEMORY,
+            "reranking": app_settings.USE_RERANK,
+        },
+        "chunk_strategy": app_settings.CHUNK_STRATEGY,
+        "supported_languages": app_settings.PRIMARY_LANG,
+    }
+
+
 @base_router.get("/health", summary="Basic health check")
 async def health():
     """Returns 200 OK when the app is running."""

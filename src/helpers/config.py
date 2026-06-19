@@ -8,8 +8,8 @@ from pydantic import validator
 
 class Settings(BaseSettings):
 
-    APP_NAME: str = "mini-RAG-App"
-    APP_VERSION: str = "0.1"
+    APP_NAME: str = "MINI-TOURISM RAG"
+    APP_VERSION: str = "1.0.0"
 
     # ── Application Settings ────────────────────────────────────────────────
     DEBUG: bool = False
@@ -98,12 +98,16 @@ class Settings(BaseSettings):
     DEFAULT_LANG: str = "en"
     # ── RAG Enhancements ──────────────────────────────────────────────────────
     USE_RERANK: bool = False
+    RERANK_MODEL_ID: str = "rerank-multilingual-v3.0"  # Cohere rerank model
     SEMANTIC_CACHE_THRESHOLD: float = 0.95
+    TOP_K_RESULTS: int = 5                    # Default top-K for retrieval
+    HYBRID_SEARCH_SEMANTIC_WEIGHT: float = 0.6  # Weight for dense vs BM25 in hybrid search
 
     # ── RAG Memory Settings ───────────────────────────────────────────────────
     USE_WINDOW_MEMORY: bool = True
     WINDOW_MEMORY_K: int = 5
     USE_SUMMARY_MEMORY: bool = True
+    SUMMARY_TRIGGER_LENGTH: int = 10          # Messages before auto-summarisation fires
     USE_ENTITY_MEMORY: bool = True
     USE_VECTOR_MEMORY: bool = True
     USE_SEMANTIC_CACHE: bool = True

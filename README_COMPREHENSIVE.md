@@ -5,12 +5,12 @@
 
 <br/>
 
-# ⚡ MINI- RAG
+# ⚡ MINI-TOURISM RAG
 
-### *Production-Grade Retrieval-Augmented Generation Infrastructure*
+### *Production-Grade Retrieval-Augmented Generation for the Tourism Domain*
 
-> Transform static documents into intelligent, context-aware AI experts —  
-> with semantic memory, multilingual reasoning, and enterprise-grade observability.
+> Transform static tourism documents into an intelligent, context-aware AI travel expert —  
+> with semantic memory, multilingual reasoning (Arabic + English), and enterprise-grade observability.
 
 <br/>
 
@@ -92,10 +92,12 @@
 
 ## 🎯 Overview
 
-**MINI- RAG** is a production-ready **Retrieval-Augmented Generation** platform engineered to solve one of the hardest problems in AI deployment: making Large Language Models *reliably knowledgeable* about your specific domain.
+**MINI-TOURISM RAG** is a production-ready **Retrieval-Augmented Generation** platform engineered to solve one of the hardest problems in AI deployment: making Large Language Models *reliably knowledgeable* about your specific domain.
+
+This instance is **specialised for the tourism domain** — particularly Egypt and the Arab world. Feed it travel guides, hotel directories, attraction databases, visa information, and itinerary documents; it becomes an expert travel AI that cites real sources and adapts to each user's preferences across sessions.
 
 Standard LLMs hallucinate. They forget. They don't know your data.  
-MINI- RAG fixes this — by grounding every response in **real, retrieved evidence**.
+MINI-TOURISM RAG fixes this — by grounding every response in **real, retrieved evidence**.
 
 <br/>
 
@@ -110,6 +112,7 @@ MINI- RAG fixes this — by grounding every response in **real, retrieved eviden
 | **Scalability** | Single provider lock-in | 4 LLMs × 4 Vector DBs × 5 embedders |
 | **Observability** | Black box | Prometheus metrics on every operation |
 | **Cost Control** | Every query hits the LLM | Semantic cache layer cuts API calls |
+| **Tourism Focus** | Generic answers | Expert on Egypt attractions, hotels, itineraries |
 
 <br/>
 
@@ -879,7 +882,43 @@ MINI-_RAG/
 
 <br/>
 
-### 📊 Projects API
+### 🔍 Base & Info API
+
+<details>
+<summary><strong>GET /info — Application info & backend status</strong></summary>
+
+```http
+GET /api/v1/info
+```
+
+**Response 200:**
+```json
+{
+  "status": "ok",
+  "app_name": "MINI-TOURISM RAG",
+  "version": "1.0.0",
+  "environment": "production",
+  "backends": {
+    "generation": "COHERE",
+    "generation_model": "command-r-plus",
+    "embedding": "COHERE",
+    "embedding_model": "embed-multilingual-v3.0",
+    "embedding_dimensions": 1024,
+    "vector_db": "QDRANT"
+  },
+  "memory_features": {
+    "semantic_cache": true,
+    "window_memory": true,
+    "summary_memory": true,
+    "entity_memory": true,
+    "vector_memory": true,
+    "reranking": true
+  },
+  "chunk_strategy": "overlapping",
+  "supported_languages": "en"
+}
+```
+</details>
 
 <details>
 <summary><strong>GET /projects/ — List all projects</strong></summary>
@@ -1098,13 +1137,16 @@ Content-Type: application/json
 ```json
 {
   "signal": "CHAT_SUCCESS",
-  "message": "Cairo offers excellent day trip options...",
+  "answer": "Cairo offers excellent day trip options...",
   "sources": [
     {
-      "text": "Day trips from Cairo include...",
-      "source": "cairo_guide.pdf"
+      "text": "Day trips from Cairo include Giza Pyramids, Saqqara...",
+      "source": "cairo_guide.pdf",
+      "page": 12,
+      "score": 0.94
     }
   ],
+  "cached": false,
   "session_id": "session_user_abc_001"
 }
 ```
@@ -1953,28 +1995,29 @@ This project demonstrates solutions to real production AI engineering problems:
 
 ```mermaid
 gantt
-    title MINI- RAG Development Roadmap
+    title MINI-TOURISM RAG Development Roadmap
     dateFormat  YYYY-MM-DD
     section v1.0 — Foundation ✅
-    Core RAG Pipeline        :done, 2024-01-01, 2024-02-15
-    Memory System            :done, 2024-01-15, 2024-03-01
-    Multi-provider Support   :done, 2024-02-01, 2024-03-15
-    Docker + Monitoring      :done, 2024-03-01, 2024-04-01
+    Core RAG Pipeline        :done, 2025-01-01, 2025-02-15
+    Memory System            :done, 2025-01-15, 2025-03-01
+    Multi-provider Support   :done, 2025-02-01, 2025-03-15
+    Docker + Monitoring      :done, 2025-03-01, 2025-04-01
 
-    section v1.1 — Intelligence
-    Hybrid BM25 + Dense      :active, 2024-04-01, 2024-05-01
-    Query Reformulation      :2024-04-15, 2024-05-15
-    Citation Highlighting    :2024-05-01, 2024-05-30
+    section v1.1 — Intelligence ✅
+    Hybrid BM25 + Dense      :done, 2025-04-01, 2025-05-01
+    Query Reformulation      :done, 2025-04-15, 2025-05-15
+    Source Citations in Chat :done, 2026-05-01, 2026-05-11
+    Asset Deletion Endpoint  :done, 2026-05-01, 2026-05-11
 
     section v1.2 — Scale
-    Streaming Responses      :2024-06-01, 2024-07-01
-    Async Indexing Queue     :2024-06-15, 2024-07-15
-    Multi-tenant Auth        :2024-07-01, 2024-08-01
+    Streaming SSE Responses  :active, 2026-06-01, 2026-07-01
+    Async Indexing Queue     :2026-06-15, 2026-07-15
+    Multi-tenant Auth        :2026-07-01, 2026-08-01
 
     section v2.0 — Enterprise
-    GraphRAG Support         :2024-09-01, 2024-11-01
-    Fine-tuning Pipeline     :2024-10-01, 2024-12-01
-    SDK Release (Python/JS)  :2024-11-01, 2025-01-01
+    GraphRAG Support         :2026-09-01, 2026-11-01
+    Fine-tuning Pipeline     :2026-10-01, 2026-12-01
+    SDK Release (Python/JS)  :2026-11-01, 2027-01-01
 ```
 
 <br/>
@@ -1983,7 +2026,10 @@ gantt
 
 | Feature | Status | Priority |
 |---------|--------|----------|
-| 🔄 Streaming SSE responses | Planned v1.1 | High |
+| ✅ Hybrid BM25 + Dense search | **Shipped v1.1** | ✅ Done |
+| ✅ Source citations in chat | **Shipped v1.1** | ✅ Done |
+| ✅ Asset deletion endpoint | **Shipped v1.1** | ✅ Done |
+| 🔄 Streaming SSE responses | Planned v1.2 | High |
 | 📊 GraphRAG (graph-based retrieval) | Planned v2.0 | High |
 | 🔐 Multi-tenant authentication | Planned v1.2 | High |
 | 🌐 REST SDK (Python + TypeScript) | Planned v2.0 | Medium |
@@ -2120,6 +2166,7 @@ See [LICENSE](./LICENSE) for the full text.
   <strong>Version:</strong> 1.0.0 &nbsp;·&nbsp;
   <strong>Status:</strong> ✅ Production Ready &nbsp;·&nbsp;
   <strong>Last Updated:</strong> May 2026 &nbsp;·&nbsp;
+  <strong>Domain:</strong> Tourism (Egypt &amp; Arab World) &nbsp;·&nbsp;
   <strong>License:</strong> MIT
 </sub>
 

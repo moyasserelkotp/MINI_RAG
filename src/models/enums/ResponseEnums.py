@@ -10,6 +10,9 @@ class ResponseSignal(Enum):
     FILE_UPLOAD_SUCCESS = "file_upload_success"
     FILE_UPLOAD_FAILED = "file_upload_failed"
     FILE_NOT_FOUND = "file_not_found"
+    DELETE_ASSET_SUCCESS = "delete_asset_success"
+    DELETE_ASSET_ERROR = "delete_asset_error"
+    ASSET_NOT_FOUND = "asset_not_found"
 
     # ── Processing ───────────────────────────────────────────────────────────
     PROCESSING_SUCCESS = "processing_success"

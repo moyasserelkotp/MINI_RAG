@@ -182,13 +182,14 @@ class NLPController(BaseController):
 
         try:
             start = time.monotonic()
+            semantic_weight = getattr(self.app_settings, "HYBRID_SEARCH_SEMANTIC_WEIGHT", 0.6)
             if use_hybrid:
                 results = self.vectordb_client.hybrid_search(
                     collection_name=collection_name,
                     query_text=text,
                     vector=vector,
                     limit=limit,
-                    semantic_weight=0.6,
+                    semantic_weight=semantic_weight,
                 )
             else:
                 results = self.vectordb_client.search_by_vector(
@@ -340,7 +341,18 @@ class NLPController(BaseController):
         use_rerank: bool = True,
         session_id: Optional[str] = None
     ):
+        """Run full RAG pipeline and return (answer, full_prompt, chat_history, sources, cached).
+
+        Returns:
+            answer      – str | None | False
+            full_prompt – str | None
+            chat_history – list | None
+            sources     – list[dict] with keys text, source, page, score
+            cached      – bool (True when answer came from semantic cache)
+        """
         answer, full_prompt, chat_history = None, None, None
+        sources: List[dict] = []
+        cached = False
 
         # Feature flags
         use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
@@ -380,7 +392,7 @@ class NLPController(BaseController):
         cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
         if not cache_vec:
             logger.error("Failed to embed search query.")
-            return False, None, None
+            return False, None, None, [], False
 
         # 3. Semantic Cache Check
         self._init_cache_collection(project.project_id)
@@ -397,13 +409,19 @@ class NLPController(BaseController):
                     cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
                     if cached_answer:
                         try:
-                            record_cache_hit(project_id=project.project_id)  # FIX: record hit metric
+                            record_cache_hit(project_id=project.project_id)
                         except Exception:
                             pass
-                        return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", []
+                        # Return immediately with cached=True flag
+                        return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", [], [], True
+                    # Cache entry exists but answer field is missing — treat as miss
+                    try:
+                        record_cache_miss(project_id=project.project_id)
+                    except Exception:
+                        pass
                 else:
                     try:
-                        record_cache_miss(project_id=project.project_id)  # FIX: record miss metric
+                        record_cache_miss(project_id=project.project_id)
                     except Exception:
                         pass
             except Exception as e:
@@ -435,7 +453,18 @@ class NLPController(BaseController):
                 project=project, text=search_query, limit=limit, use_hybrid=use_hybrid, score_threshold=score_threshold
             )
             if retrieved_documents is None:
-                return False, None, None
+                return False, None, None, [], False
+
+            # Build sources list from retrieved docs before reranking
+            sources = [
+                {
+                    "text": d.payload.get("text", "")[:300],  # Truncate for API response
+                    "source": (d.payload.get("metadata") or {}).get("source", "unknown"),
+                    "page": (d.payload.get("metadata") or {}).get("page"),
+                    "score": round(float(getattr(d, "score", 0.0)), 4),
+                }
+                for d in retrieved_documents
+            ]
 
             # Cohere Rerank
             should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
@@ -445,9 +474,10 @@ class NLPController(BaseController):
                     cohere_client = self.cohere_client
                     if cohere_client:
                         docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
+                        rerank_model = getattr(self.app_settings, "RERANK_MODEL_ID", "rerank-multilingual-v3.0")
                         reranked = await asyncio.to_thread(
                             cohere_client.rerank,
-                            model="rerank-english-v3.0", query=search_query, documents=docs_texts, top_n=min(limit, len(docs_texts))
+                            model=rerank_model, query=search_query, documents=docs_texts, top_n=min(limit, len(docs_texts))
                         )
                         reranked_docs = []
                         for r in reranked.results:
@@ -455,6 +485,16 @@ class NLPController(BaseController):
                             d.score = float(r.relevance_score)
                             reranked_docs.append(d)
                         retrieved_documents = reranked_docs
+                        # Rebuild sources list with updated rerank scores
+                        sources = [
+                            {
+                                "text": d.payload.get("text", "")[:300],
+                                "source": (d.payload.get("metadata") or {}).get("source", "unknown"),
+                                "page": (d.payload.get("metadata") or {}).get("page"),
+                                "score": round(float(getattr(d, "score", 0.0)), 4),
+                            }
+                            for d in reranked_docs
+                        ]
                     else:
                         logger.warning("USE_RERANK=True but cohere_client is not initialised; skipping rerank.")
                 except Exception as e:
@@ -534,7 +574,7 @@ class NLPController(BaseController):
                 await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=answer))
                 await session_model.increment_message_count(session_id, 2)
 
-                if use_summary and session_obj and (session_obj.message_count + 2 >= 10):
+                if use_summary and session_obj and (session_obj.message_count + 2 >= getattr(self.app_settings, "SUMMARY_TRIGGER_LENGTH", 10)):
                     summary_task = asyncio.create_task(
                         self._update_session_summary(session_id, project.id, session_model, message_model)
                     )
@@ -555,4 +595,4 @@ class NLPController(BaseController):
                     if t.exception() else None
                 )
 
-        return answer, full_prompt, chat_history_prompts
+        return answer, full_prompt, chat_history_prompts, sources, cached

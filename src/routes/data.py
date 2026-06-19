@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, UploadFile, status, Request
+from fastapi import APIRouter, Depends, UploadFile, status, Request
 from fastapi.responses import JSONResponse
 from helpers.config import get_settings, Settings
 from controllers import DataController, ProjectController, ProcessController
@@ -70,7 +70,19 @@ async def upload_data(
         asset_name=file_id,
         asset_size=os.path.getsize(file_path),
     )
-    asset_record = await asset_model.create_asset(asset=asset_resource)
+    try:
+        asset_record = await asset_model.create_asset(asset=asset_resource)
+    except Exception as e:
+        logger.error("Failed to create asset record in DB: %s", e)
+        # Clean up the already-written file to avoid orphaned files on disk
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"signal": ResponseSignal.FILE_UPLOAD_FAILED.value},
+        )
 
     return JSONResponse(
         content={
@@ -245,3 +257,100 @@ async def process_all_files(
         do_reset=process_request.do_reset,
         app_settings=request.app.state.settings if hasattr(request.app.state, "settings") else None,
     )
+
+
+# ── List assets ───────────────────────────────────────────────────────────────
+
+@data_router.get("/assets/{project_id}")
+async def list_assets(request: Request, project_id: str):
+    """Return all uploaded assets for a project."""
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    project = await project_model.get_project_or_create_one(project_id=project_id)
+
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+    assets = await asset_model.get_all_project_assets(
+        asset_project_id=project.id,
+        asset_type=AssetTypeEnum.FILE.value,
+    )
+
+    return JSONResponse(
+        content={
+            "signal": "GET_ASSETS_SUCCESS",
+            "project_id": project_id,
+            "total": len(assets),
+            "assets": [
+                {
+                    "id": str(a.id),
+                    "asset_name": a.asset_name,
+                    "asset_size": a.asset_size,
+                    "asset_type": a.asset_type,
+                    "asset_pushed_at": a.asset_pushed_at.isoformat() if getattr(a, "asset_pushed_at", None) else None,
+                }
+                for a in assets
+            ],
+        }
+    )
+
+
+
+# ── Delete single asset ───────────────────────────────────────────────────────
+
+@data_router.delete("/assets/{project_id}/{asset_id}")
+async def delete_asset(request: Request, project_id: str, asset_id: str):
+    """Delete a single asset: removes the MongoDB record, its text chunks, and the
+    physical file on disk. Note: vector embeddings in the vector DB become orphaned
+    and will be cleaned up on the next full re-index (nlp/index/push with do_reset=1).
+    """
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    project = await project_model.get_project_or_create_one(project_id=project_id)
+
+    if not project:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value},
+        )
+
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+    asset = await asset_model.get_asset_by_id(asset_id=asset_id)
+
+    if not asset:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"signal": ResponseSignal.ASSET_NOT_FOUND.value},
+        )
+
+    # Validate asset belongs to this project
+    if str(asset.asset_project_id) != str(project.id):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"signal": ResponseSignal.DELETE_ASSET_ERROR.value, "error": "Asset does not belong to this project"},
+        )
+
+    # 1. Delete MongoDB chunks for this asset
+    chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
+    deleted_chunks = await chunk_model.delete_chunks_by_asset_id(asset_id=asset.id)
+
+    # 2. Delete the physical file
+    data_controller = DataController()
+    file_deleted = data_controller.delete_file_by_name(file_id=asset.asset_name)
+    if not file_deleted:
+        logger.warning("Physical file not found for asset %s — may have already been deleted", asset_id)
+
+    # 3. Delete the asset record from MongoDB
+    deleted = await asset_model.delete_asset_by_id(asset_id=asset_id)
+
+    if not deleted:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": ResponseSignal.DELETE_ASSET_ERROR.value},
+        )
+
+    return JSONResponse(
+        content={
+            "signal": ResponseSignal.DELETE_ASSET_SUCCESS.value,
+            "asset_id": asset_id,
+            "asset_name": asset.asset_name,
+            "deleted_chunks": deleted_chunks,
+        }
+    )
+
