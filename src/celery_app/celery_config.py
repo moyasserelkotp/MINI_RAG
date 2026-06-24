@@ -1,23 +1,3 @@
-"""
-celery_config.py
-================
-Celery application factory for MINI-TOURISM RAG.
-
-Broker  : RabbitMQ  (AMQP)
-Backend : Redis     (result store + optional cache)
-
-Queues
-------
-  processing   – CPU-bound document chunking tasks
-  indexing     – Network-bound embedding + vector-DB push tasks
-  default      – Catch-all / lightweight tasks
-
-Usage
------
-  # In any Python module:
-  from celery_app.celery_config import celery_app
-"""
-
 from __future__ import annotations
 
 import os
@@ -27,7 +7,7 @@ from kombu import Exchange, Queue
 
 logger = logging.getLogger(__name__)
 
-# ── Connection URLs (read from env with sane defaults) ──────────────────────
+#  Connection URLs (read from env with sane defaults) 
 
 def _broker_url() -> str:
     user     = os.getenv("RABBITMQ_DEFAULT_USER", "minirag")
@@ -46,7 +26,7 @@ def _result_backend() -> str:
     return f"redis://:{password}@{host}:{port}/{db}"
 
 
-# ── Exchange & Queue definitions ────────────────────────────────────────────
+#  Exchange & Queue definitions 
 
 _default_exchange   = Exchange("default",    type="direct", durable=True)
 _processing_exchange = Exchange("processing", type="direct", durable=True)
@@ -55,15 +35,15 @@ _dlx_exchange        = Exchange("dlx",        type="direct", durable=True)
 
 TASK_QUEUES = (
     Queue("default",    _default_exchange,    routing_key="default",
-          queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
+        queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
     Queue("processing", _processing_exchange, routing_key="processing",
-          queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
+        queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
     Queue("indexing",   _indexing_exchange,   routing_key="indexing",
-          queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
+        queue_arguments={"x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "dead_letter"}),
     Queue("dead_letters", _dlx_exchange,      routing_key="dead_letter"),
 )
 
-# ── Task routing rules ───────────────────────────────────────────────────────
+#  Task routing rules 
 
 TASK_ROUTES = {
     "celery_app.tasks.processing.*": {
@@ -77,7 +57,7 @@ TASK_ROUTES = {
 }
 
 
-# ── Application factory ─────────────────────────────────────────────────────
+#  Application factory 
 
 def create_celery_app() -> Celery:
     app = Celery(
@@ -91,29 +71,29 @@ def create_celery_app() -> Celery:
     )
 
     app.conf.update(
-        # ── Serialisation ────────────────────────────────────────────────────
+        #  Serialisation 
         task_serializer="json",
         result_serializer="json",
         accept_content=["json"],
-        # ── Queues ───────────────────────────────────────────────────────────
+        #  Queues 
         task_queues=TASK_QUEUES,
         task_default_queue="default",
         task_default_exchange="default",
         task_default_routing_key="default",
         task_routes=TASK_ROUTES,
-        # ── Worker behaviour ─────────────────────────────────────────────────
+        #  Worker behaviour 
         worker_prefetch_multiplier=1,       # Fair task distribution
         task_acks_late=True,                # Re-queue on worker crash
         task_reject_on_worker_lost=True,
-        # ── Result TTL (24 h) ────────────────────────────────────────────────
+        #  Result TTL (24 h) 
         result_expires=86_400,
-        # ── Retry / rate limits ──────────────────────────────────────────────
+        #  Retry / rate limits 
         task_max_retries=3,
         task_default_retry_delay=5,         # seconds
-        # ── Timezone ────────────────────────────────────────────────────────
+        #  Timezone 
         timezone="UTC",
         enable_utc=True,
-        # ── Beat schedule (optional periodic tasks) ──────────────────────────
+        #  Beat schedule (optional periodic tasks) 
         beat_schedule={},
     )
 
@@ -127,3 +107,24 @@ def create_celery_app() -> Celery:
 
 # Module-level singleton — import this everywhere
 celery_app: Celery = create_celery_app()
+
+
+"""
+celery_config.py
+================
+Celery application factory for MINI-TOURISM RAG.
+
+Broker  : RabbitMQ  (AMQP)
+Backend : Redis     (result store + optional cache)
+
+Queues
+------
+    processing   – CPU-bound document chunking tasks
+    indexing     – Network-bound embedding + vector-DB push tasks
+    default      – Catch-all / lightweight tasks
+
+Usage
+-----
+    # In any Python module:
+    from celery_app.celery_config import celery_app
+"""

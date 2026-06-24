@@ -74,9 +74,7 @@ class GeminiProvider(LLMInterface):
                 max_output_tokens=max_output_tokens,
             )
 
-            # ── Build Gemini chat history from our internal format ──────────
-            # Our format: [{"role": "system"|"user"|"assistant", "content": "..."}]
-            # Gemini format: [{"role": "user"|"model", "parts": ["..."]}]
+
             system_text_parts = []
             gemini_history = []
 
@@ -127,8 +125,6 @@ class GeminiProvider(LLMInterface):
             task_type = "retrieval_query"
 
         try:
-            # FIX: Do NOT call process_text() here — truncating embeddings at
-            # 1024 chars loses semantic content. Pass the full text to the model.
             response = genai.embed_content(
                 model=self.embedding_model_id,
                 content=text,

@@ -1,17 +1,3 @@
-"""
-routes/tasks.py
-===============
-REST API for submitting background Celery jobs and polling their status.
-
-Endpoints
----------
-  POST /api/v1/tasks/process-file/{project_id}   – async document chunking (single file)
-  POST /api/v1/tasks/process-all/{project_id}    – async document chunking (all files)
-  POST /api/v1/tasks/index/{project_id}          – async vector-DB indexing
-  GET  /api/v1/tasks/{task_id}                   – poll task status + result
-  DELETE /api/v1/tasks/{task_id}                 – revoke / cancel a pending task
-"""
-
 from __future__ import annotations
 
 import logging
@@ -34,8 +20,7 @@ tasks_router = APIRouter(
 )
 
 
-# ── Request schemas ──────────────────────────────────────────────────────────
-
+#  Request schemas 
 class ProcessTaskRequest(BaseModel):
     file_id: Optional[str] = Field(
         None,
@@ -57,8 +42,7 @@ class IndexTaskRequest(BaseModel):
     )
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
+#  Helpers 
 def _task_response(task_id: str, http_status: int = status.HTTP_202_ACCEPTED) -> JSONResponse:
     """Return a uniform 202 payload pointing the client at the status endpoint."""
     return JSONResponse(
@@ -103,8 +87,7 @@ def _build_state(result: AsyncResult) -> dict:
     return payload
 
 
-# ── Submit: process single file ──────────────────────────────────────────────
-
+#  Submit: process single file 
 @tasks_router.post(
     "/process-file/{project_id}",
     summary="Submit async document chunking (single file)",
@@ -144,8 +127,7 @@ async def submit_process_file(
     return _task_response(task.id)
 
 
-# ── Submit: process all files ────────────────────────────────────────────────
-
+#  Submit: process all files 
 @tasks_router.post(
     "/process-all/{project_id}",
     summary="Submit async document chunking (all files)",
@@ -176,8 +158,7 @@ async def submit_process_all(
     return _task_response(task.id)
 
 
-# ── Submit: index / push to vector DB ────────────────────────────────────────
-
+#  Submit: index / push to vector DB 
 @tasks_router.post(
     "/index/{project_id}",
     summary="Submit async vector-DB indexing",
@@ -206,8 +187,7 @@ async def submit_index(
     return _task_response(task.id)
 
 
-# ── Poll task status ─────────────────────────────────────────────────────────
-
+#  Poll task status
 @tasks_router.get(
     "/{task_id}",
     summary="Get task status and result",
@@ -230,7 +210,7 @@ async def get_task_status(task_id: str):
     return JSONResponse(content=_build_state(result))
 
 
-# ── Revoke / cancel task ─────────────────────────────────────────────────────
+#  Revoke / cancel task 
 
 @tasks_router.delete(
     "/{task_id}",
@@ -241,9 +221,9 @@ async def revoke_task(task_id: str, terminate: bool = False):
     Cancel a queued task.
 
     - ``terminate=false`` (default): tell the broker to discard the task
-      if it has not started yet.
+        if it has not started yet.
     - ``terminate=true``: send SIGTERM to the worker process handling the task
-      (use with care — may leave DB in an inconsistent state).
+        (use with care — may leave DB in an inconsistent state).
     """
     celery_app.control.revoke(task_id, terminate=terminate, signal="SIGTERM")
     logger.info("Revoked task %s (terminate=%s)", task_id, terminate)
@@ -254,3 +234,18 @@ async def revoke_task(task_id: str, terminate: bool = False):
             "terminate": terminate,
         }
     )
+
+
+"""
+routes/tasks.py
+===============
+REST API for submitting background Celery jobs and polling their status.
+
+Endpoints
+---------
+  POST /api/v1/tasks/process-file/{project_id}   – async document chunking (single file)
+  POST /api/v1/tasks/process-all/{project_id}    – async document chunking (all files)
+  POST /api/v1/tasks/index/{project_id}          – async vector-DB indexing
+  GET  /api/v1/tasks/{task_id}                   – poll task status + result
+  DELETE /api/v1/tasks/{task_id}                 – revoke / cancel a pending task
+"""

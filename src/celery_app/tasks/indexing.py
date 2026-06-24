@@ -1,11 +1,3 @@
-"""
-celery_app/tasks/indexing.py
-============================
-Celery tasks for embedding chunks and pushing them into the vector database.
-
-Queue: ``indexing``
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -27,7 +19,7 @@ from models.ProjectModel import ProjectModel
 logger = logging.getLogger(__name__)
 
 
-# ── Helper: run async from sync context ─────────────────────────────────────
+#  Helper: run async from sync context 
 
 def _run_async(coro):
     try:
@@ -41,7 +33,7 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-# ── Base task ────────────────────────────────────────────────────────────────
+#  Base task 
 
 class IndexingBaseTask(Task):
     abstract = True
@@ -55,7 +47,7 @@ class IndexingBaseTask(Task):
         logger.warning("Indexing task %s RETRYING | error=%s", task_id, exc)
 
 
-# ── Index-push task ──────────────────────────────────────────────────────────
+#  Index-push task 
 
 @celery_app.task(
     bind=True,

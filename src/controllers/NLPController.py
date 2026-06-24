@@ -36,7 +36,7 @@ class NLPController(BaseController):
         # Cache to avoid repeated VectorDB round-trips for collection existence
         self._initialized_collections: set = set()
 
-    # ── Helpers ──────────────────────────────────────────────────────────────
+    #  Helpers 
 
     def create_collection_name(self, project_id: str) -> str:
         prefix = getattr(self.app_settings, "VECTOR_DB_COLLECTION_PREFIX", "collection")
@@ -74,7 +74,7 @@ class NLPController(BaseController):
             )
         self._initialized_collections.add(col_name)
 
-    # ── Collection management ─────────────────────────────────────────────────
+    #  Collection management 
 
     def reset_vector_db_collection(self, project: Project):
         collection_name = self.create_collection_name(project_id=project.project_id)
@@ -87,8 +87,7 @@ class NLPController(BaseController):
         )
         return json.loads(json.dumps(collection_info, default=lambda x: x.__dict__))
 
-    # ── Indexing ──────────────────────────────────────────────────────────────
-
+    #  Indexing 
     def _embed_texts_batch(self, texts: List[str], document_type: str) -> List[list]:
         batch_size = self.app_settings.MAX_EMBEDDING_BATCH_SIZE
 
@@ -157,7 +156,7 @@ class NLPController(BaseController):
 
         return True
 
-    # ── Search ────────────────────────────────────────────────────────────────
+    #  Search 
 
     def search_vector_db_collection(
         self,
@@ -222,8 +221,7 @@ class NLPController(BaseController):
 
         return list(results)
 
-    # ── Memory Subroutines ────────────────────────────────────────────────────
-
+    #  Memory Subroutines 
     async def _update_session_summary(self, session_id: str, project_id, session_model, message_model):
         try:
             messages = await message_model.get_messages_by_session(session_id, limit=20)
@@ -329,8 +327,7 @@ class NLPController(BaseController):
             return query
 
 
-    # ── Answer ────────────────────────────────────────────────────────────────
-
+    #  Answer 
     async def answer_rag_question(
         self,
         project: Project,

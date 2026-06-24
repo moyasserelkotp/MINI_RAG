@@ -15,7 +15,7 @@ from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
 
 import logging
 
-# ── Configure logging based on settings ──────────────────────────────────
+#  Configure logging based on settings 
 settings = get_settings()
 
 # Convert string log level to logging level
@@ -39,7 +39,7 @@ logger.info("Log Level: %s", settings.LOG_LEVEL)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ──────────────────────────────────────────────────────────────
+    #  Startup 
     settings = get_settings()
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
 
@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ── Shutdown ─────────────────────────────────────────────────────────────
+    #  Shutdown 
     logger.info("Shutting down…")
     app.mongo_conn.close()
     try:

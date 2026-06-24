@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "MINI-TOURISM RAG"
     APP_VERSION: str = "1.0.0"
 
-    # ── Application Settings ────────────────────────────────────────────────
+    # Application Settings 
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     FILE_ALLOWED_TYPES: Union[List[str], str] = []
@@ -40,11 +40,11 @@ class Settings(BaseSettings):
             return [item.strip().lower() for item in v if isinstance(item, str)]
         return v
 
-    # ── MongoDB ──────────────────────────────────────────────────────────────
+    # MongoDB 
     MONGODB_URL: str
     MONGODB_DATABASE: str
 
-    # ── LLM backends ─────────────────────────────────────────────────────────
+    # LLM backends 
     GENERATION_BACKEND: str
     EMBEDDING_BACKEND: str
 
@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     def GENERATION_DEFAULT_TEMPERATURE(self) -> float:
         return self.GENERATION_DAFAULT_TEMPERATURE or 0.1
 
-    # ── Vector DB ─────────────────────────────────────────────────────────────
+    #  Vector DB 
     VECTOR_DB_BACKEND: str
     VECTOR_DB_URL: Optional[str] = None
     VECTOR_DB_PATH: str = "qdrant_db"
@@ -93,17 +93,17 @@ class Settings(BaseSettings):
     # Minimum relevance score to include in search results (0.0 = no filter)
     SEARCH_SCORE_THRESHOLD: float = 0.0
 
-    # ── Language templates ────────────────────────────────────────────────────
+    # Language templates 
     PRIMARY_LANG: str = "en"
     DEFAULT_LANG: str = "en"
-    # ── RAG Enhancements ──────────────────────────────────────────────────────
+    # RAG Enhancements 
     USE_RERANK: bool = False
     RERANK_MODEL_ID: str = "rerank-multilingual-v3.0"  # Cohere rerank model
     SEMANTIC_CACHE_THRESHOLD: float = 0.95
     TOP_K_RESULTS: int = 5                    # Default top-K for retrieval
     HYBRID_SEARCH_SEMANTIC_WEIGHT: float = 0.6  # Weight for dense vs BM25 in hybrid search
 
-    # ── RAG Memory Settings ───────────────────────────────────────────────────
+    # RAG Memory Settings 
     USE_WINDOW_MEMORY: bool = True
     WINDOW_MEMORY_K: int = 5
     USE_SUMMARY_MEMORY: bool = True
@@ -112,21 +112,21 @@ class Settings(BaseSettings):
     USE_VECTOR_MEMORY: bool = True
     USE_SEMANTIC_CACHE: bool = True
 
-    # ── Celery / RabbitMQ ─────────────────────────────────────────────────────
+    #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"
     RABBITMQ_DEFAULT_PASS: str = "minirag_rabbit_2222"
     RABBITMQ_HOST: str = "rabbitmq"
     RABBITMQ_PORT: str = "5672"
     RABBITMQ_VHOST: str = "minirag_vhost"
 
-    # ── Celery / Redis ────────────────────────────────────────────────────────
+    # Celery / Redis 
     REDIS_HOST: str = "redis"
     REDIS_PORT: str = "6379"
     REDIS_PASSWORD: str = "minirag_redis_2222"
     REDIS_CELERY_DB: str = "1"   # DB index for Celery results
     REDIS_CACHE_DB: str = "0"    # DB index for app-level cache
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
+    # CORS 
     # FIX: restrict allowed origins; wildcard '*' is unsafe in production
     # Set to ["*"] only for local development; list specific domains in prod
     CORS_ALLOWED_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://localhost:8080"]

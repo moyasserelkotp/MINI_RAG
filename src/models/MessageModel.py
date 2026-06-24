@@ -2,7 +2,7 @@ from .BaseDataModel import BaseDataModel
 from .db_schemes import ChatMessage
 from .enums.DataBaseEnum import DataBaseEnum
 
-# FIX: module-level flag avoids repeated list_collection_names() on every request
+
 _INITIALIZED: bool = False
 
 

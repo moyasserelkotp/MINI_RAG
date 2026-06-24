@@ -3,9 +3,7 @@ from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
 
-# ──────────────────────────────────────────────────────────────────────────────
 # HTTP Metrics
-# ──────────────────────────────────────────────────────────────────────────────
 REQUEST_COUNT = Counter(
     "http_requests_total", "Total HTTP Requests", ["method", "endpoint", "status"]
 )
@@ -13,9 +11,8 @@ REQUEST_LATENCY = Histogram(
     "http_request_duration_seconds", "HTTP Request Latency", ["method", "endpoint"]
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
-# RAG-Specific Metrics (Key)
-# ──────────────────────────────────────────────────────────────────────────────
+
+# RAG-Specific Metrics (Key) 
 
 # Retrieval Metrics
 RETRIEVAL_LATENCY = Histogram(
@@ -107,10 +104,8 @@ def setup_metrics(app: FastAPI):
     register_metrics_endpoint(app)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Helper functions for easy metric recording
-# ──────────────────────────────────────────────────────────────────────────────
 
+# Helper functions for easy metric recording
 def record_retrieval_latency(project_id: str, duration: float):
     """Record vector DB retrieval latency"""
     RETRIEVAL_LATENCY.labels(project_id=project_id).observe(duration)

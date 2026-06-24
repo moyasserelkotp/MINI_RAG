@@ -2,9 +2,7 @@ from .BaseDataModel import BaseDataModel
 from .db_schemes import ChatSession
 from .enums.DataBaseEnum import DataBaseEnum
 from bson.objectid import ObjectId
-from datetime import datetime  # FIX: moved from inside methods to module level
-
-# FIX: module-level set avoids repeated list_collection_names() on every request
+from datetime import datetime  
 _INITIALIZED: bool = False
 
 

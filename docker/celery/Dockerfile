@@ -2,7 +2,7 @@ FROM ghcr.io/astral-sh/uv:0.6.14-python3.10-bookworm
 
 WORKDIR /app
 
-# ── System dependencies ───────────────────────────────────────────────────────
+# System dependencies 
 RUN apt-get update && apt-get install -y \
     build-essential \
     libavif-dev pkg-config \
@@ -16,23 +16,24 @@ RUN apt-get update && apt-get install -y \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python dependencies ───────────────────────────────────────────────────────
+# Python dependencies 
 COPY src/requirements.txt .
 RUN uv pip install -r requirements.txt --system
+RUN uv pip install flower==2.0.1 --system
 
-# ── Application source ────────────────────────────────────────────────────────
+# Application source 
 COPY src/ .
 
-# ── Entrypoint ────────────────────────────────────────────────────────────────
+# Entrypoint 
 COPY docker/celery/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 
-# ── Default command: run both processing and indexing queues ──────────────────
+#  Default command: run both processing and indexing queues 
 # Override in docker-compose to run dedicated workers per queue for better isolation.
 CMD ["celery", "-A", "celery_app.celery_config:celery_app", "worker", \
-     "--loglevel=info", \
-     "--queues=processing,indexing,default", \
-     "--concurrency=2", \
-     "--hostname=worker@%h"]
+        "--loglevel=info", \
+        "--queues=processing,indexing,default", \
+        "--concurrency=2", \
+        "--hostname=worker@%h"]

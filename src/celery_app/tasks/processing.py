@@ -1,14 +1,3 @@
-"""
-celery_app/tasks/processing.py
-===============================
-Celery tasks for document chunking / processing.
-
-These tasks replace the synchronous ``_process_project_files`` path in
-``routes/data.py`` with background execution so the API returns immediately.
-
-Queue: ``processing``
-"""
-
 from __future__ import annotations
 
 import logging
@@ -35,7 +24,7 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 
-# ── Helper: run async code from sync Celery task ────────────────────────────
+#  Helper: run async code from sync Celery task 
 
 def _run_async(coro):
     """Execute an async coroutine inside a Celery (sync) task."""
@@ -51,7 +40,7 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-# ── Base task class with retry behaviour ────────────────────────────────────
+#  Base task class with retry behaviour 
 
 class ProcessingBaseTask(Task):
     abstract = True
@@ -71,7 +60,7 @@ class ProcessingBaseTask(Task):
         )
 
 
-# ── Main processing task ─────────────────────────────────────────────────────
+#  Main processing task 
 
 @celery_app.task(
     bind=True,
