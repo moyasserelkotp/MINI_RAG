@@ -17,7 +17,9 @@ RUN apt-get update && apt-get install -y \
 
 COPY src/requirements.txt .
 
-RUN uv pip install -r requirements.txt --system
+ENV UV_HTTP_TIMEOUT=120
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r requirements.txt --system
 
 COPY src/ .
 

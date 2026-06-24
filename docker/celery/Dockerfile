@@ -18,8 +18,11 @@ RUN apt-get update && apt-get install -y \
 
 # Python dependencies 
 COPY src/requirements.txt .
-RUN uv pip install -r requirements.txt --system
-RUN uv pip install flower==2.0.1 --system
+ENV UV_HTTP_TIMEOUT=120
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r requirements.txt --system
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install flower==2.0.1 --system
 
 # Application source 
 COPY src/ .
