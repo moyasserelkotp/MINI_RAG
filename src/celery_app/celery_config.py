@@ -93,6 +93,8 @@ def create_celery_app() -> Celery:
         #  Timezone 
         timezone="UTC",
         enable_utc=True,
+        #  Startup connection retry (required for Celery 6.0+ compatibility)
+        broker_connection_retry_on_startup=True,
         #  Beat schedule (optional periodic tasks) 
         beat_schedule={},
     )
