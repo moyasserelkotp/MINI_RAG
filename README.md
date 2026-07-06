@@ -480,7 +480,3 @@ This project is licensed under the MIT License - see [LICENSE](./LICENSE) for de
 - 🐳 **Docker Setup**: [docker/README.md](./docker/README.md)
 - 🚀 **FastAPI Docs**: https://fastapi.tiangolo.com/
 - 📚 **Vector DB Docs**: https://qdrant.tech/documentation/
-
----
-
-**Made with ❤️ for Tourism AI**
