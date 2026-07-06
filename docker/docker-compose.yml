@@ -24,6 +24,22 @@ services:
     env_file:
       - ./env/.env.app
 
+  # Streamlit Frontend UI
+  frontend:
+    image: minirag-frontend
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+    container_name: frontend
+    ports:
+      - "8501:8501"
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      - fastapi
+    env_file:
+      - ./env/.env.app
   # Celery Worker — Processing queue (chunking)
   celery-worker-processing:
     image: minirag-celery
