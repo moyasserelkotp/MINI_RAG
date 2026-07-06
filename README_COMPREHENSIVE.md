@@ -2102,7 +2102,7 @@ See [LICENSE](./LICENSE) for the full text.
 
 <br/>
 
-**Built with ❤️ by the MINI- RAG Team**
+**Built with MINI- RAG Team**
 
 *If this project helped you, consider giving it a ⭐ on GitHub*
 
