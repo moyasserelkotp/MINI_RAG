@@ -104,17 +104,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="MINI- RAG",
+    title="MINI-RAG",
     description=(
-        "Production-grade Retrieval-Augmented Generation API for the  domain. "
-        "Transforms static documents (travel guides, attraction info, hospitality data) "
-        "into an intelligent, context-aware AI expert with semantic memory, "
-        "multilingual reasoning (Arabic + English), and enterprise-grade observability."
+        "Production-grade Retrieval-Augmented Generation API. "
+        "Transforms static documents of any domain into an intelligent, context-aware AI expert "
+        "with semantic memory, multilingual reasoning (Arabic + English), "
+        "and enterprise-grade observability."
     ),
     version="1.0.0",
     contact={
-        "name": "MINI- RAG",
-        "url": "https://github.com/your-org/mini--rag",
+        "name": "MINI-RAG",
+        "url": "https://github.com/your-org/mini-rag",
     },
     license_info={
         "name": "MIT",

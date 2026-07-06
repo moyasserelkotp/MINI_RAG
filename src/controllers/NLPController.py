@@ -22,6 +22,22 @@ from utils.metrics import (
 logger = logging.getLogger(__name__)
 
 
+def _safe_task_callback(label: str):
+    """Returns a task done-callback that safely logs any exception.
+
+    This avoids the broken lambda pattern where t.exception() can raise
+    asyncio.InvalidStateError if the task hasn't finished yet.
+    """
+    def _cb(t: asyncio.Task):
+        try:
+            exc = t.exception()
+            if exc:
+                logger.error("%s failed: %s", label, exc)
+        except Exception:
+            pass
+    return _cb
+
+
 class NLPController(BaseController):
 
     def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser, cohere_client=None):
@@ -276,7 +292,7 @@ class NLPController(BaseController):
                 self._init_entity_collection(project.project_id)
                 col_name = self._get_entity_collection_name(project.project_id)
                 # Save facts to entity memory with the query vector
-                fact_id = int(hashlib.md5((session_id + query).encode()).hexdigest(), 16) % (2**63 - 1)
+                fact_id = int(hashlib.sha256((session_id + query).encode()).hexdigest(), 16) % (2**63 - 1)
                 await asyncio.to_thread(
                     self.vectordb_client.insert_one,
                     collection_name=col_name,
@@ -545,7 +561,7 @@ class NLPController(BaseController):
                 try:
                     # FIX: use search_query (the condensed query) as the stored text so
                     # the vector and stored text are always aligned for future lookups.
-                    cache_id = int(hashlib.md5(search_query.encode()).hexdigest(), 16) % (2**63 - 1)
+                    cache_id = int(hashlib.sha256(search_query.encode()).hexdigest(), 16) % (2**63 - 1)
                     task = asyncio.create_task(
                         asyncio.to_thread(
                             self.vectordb_client.insert_one,
@@ -557,10 +573,7 @@ class NLPController(BaseController):
                         )
                     )
                     # FIX: log errors from fire-and-forget tasks instead of silently dropping them
-                    task.add_done_callback(
-                        lambda t: logger.error("Cache write failed: %s", t.exception())
-                        if t.exception() else None
-                    )
+                    task.add_done_callback(_safe_task_callback("Cache write"))
                 except Exception:
                     pass
 
@@ -576,10 +589,7 @@ class NLPController(BaseController):
                         self._update_session_summary(session_id, project.id, session_model, message_model)
                     )
                     # FIX: log errors from fire-and-forget summary task
-                    summary_task.add_done_callback(
-                        lambda t: logger.error("Session summary task failed: %s", t.exception())
-                        if t.exception() else None
-                    )
+                    summary_task.add_done_callback(_safe_task_callback("Session summary"))
 
             # Entity Action Sub
             if session_id and use_entity:
@@ -587,9 +597,6 @@ class NLPController(BaseController):
                     self._extract_and_save_entities(session_id, project, query, answer, cache_vec)
                 )
                 # FIX: log errors from fire-and-forget entity extraction task
-                entity_task.add_done_callback(
-                    lambda t: logger.error("Entity extraction task failed: %s", t.exception())
-                    if t.exception() else None
-                )
+                entity_task.add_done_callback(_safe_task_callback("Entity extraction"))
 
         return answer, full_prompt, chat_history_prompts, sources, cached

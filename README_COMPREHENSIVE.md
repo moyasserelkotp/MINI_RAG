@@ -5,11 +5,11 @@
 
 <br/>
 
-# ⚡ MINI-TOURISM RAG
+# ⚡ MINI-RAG
 
-### *Production-Grade Retrieval-Augmented Generation for the Tourism Domain*
+### *Production-Grade Retrieval-Augmented Generation for Any Domain*
 
-> Transform static tourism documents into an intelligent, context-aware AI travel expert —  
+> Transform static documents of any domain into an intelligent, context-aware AI expert —  
 > with semantic memory, multilingual reasoning (Arabic + English), and enterprise-grade observability.
 
 <br/>
@@ -31,9 +31,9 @@
 
 <br/>
 
-[![Stars](https://img.shields.io/github/stars/your-org/mini--rag?style=social)](https://github.com/your-org/mini--rag)
-[![Forks](https://img.shields.io/github/forks/your-org/mini--rag?style=social)](https://github.com/your-org/mini--rag/fork)
-[![Issues](https://img.shields.io/github/issues/your-org/mini--rag?color=red)](https://github.com/your-org/mini--rag/issues)
+[![Stars](https://img.shields.io/github/stars/your-org/mini-rag?style=social)](https://github.com/your-org/mini-rag)
+[![Forks](https://img.shields.io/github/forks/your-org/mini-rag?style=social)](https://github.com/your-org/mini-rag/fork)
+[![Issues](https://img.shields.io/github/issues/your-org/mini-rag?color=red)](https://github.com/your-org/mini-rag/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 <br/>
@@ -60,7 +60,7 @@
 
 | # | Section | Description |
 |---|---------|-------------|
-| 1 | [🎯 Overview](#-overview) | What is MINI- RAG and why it matters |
+| 1 | [🎯 Overview](#-overview) | What is MINI-RAG and why it matters |
 | 2 | [✨ Feature Highlights](#-feature-highlights) | Complete capabilities at a glance |
 | 3 | [🏗 Architecture](#-architecture) | System design, layers, and components |
 | 4 | [🧠 RAG Deep Dive](#-rag-deep-dive) | How RAG works internally — beginner to expert |
@@ -92,12 +92,12 @@
 
 ## 🎯 Overview
 
-**MINI-TOURISM RAG** is a production-ready **Retrieval-Augmented Generation** platform engineered to solve one of the hardest problems in AI deployment: making Large Language Models *reliably knowledgeable* about your specific domain.
+**MINI-RAG** is a production-ready **Retrieval-Augmented Generation** platform engineered to solve one of the hardest problems in AI deployment: making Large Language Models *reliably knowledgeable* about your specific domain.
 
-This instance is **specialised for the tourism domain** — particularly Egypt and the Arab world. Feed it travel guides, hotel directories, attraction databases, visa information, and itinerary documents; it becomes an expert travel AI that cites real sources and adapts to each user's preferences across sessions.
+Feed it documents of any domain — legal briefs, medical manuals, technical specifications, HR policies, knowledge bases — and it becomes a domain expert that cites real sources and adapts to each user's preferences across sessions.
 
 Standard LLMs hallucinate. They forget. They don't know your data.  
-MINI-TOURISM RAG fixes this — by grounding every response in **real, retrieved evidence**.
+MINI-RAG fixes this — by grounding every response in **real, retrieved evidence**.
 
 <br/>
 
@@ -112,7 +112,7 @@ MINI-TOURISM RAG fixes this — by grounding every response in **real, retrieved
 | **Scalability** | Single provider lock-in | 4 LLMs × 4 Vector DBs × 5 embedders |
 | **Observability** | Black box | Prometheus metrics on every operation |
 | **Cost Control** | Every query hits the LLM | Semantic cache layer cuts API calls |
-| **Tourism Focus** | Generic answers | Expert on Egypt attractions, hotels, itineraries |
+| **Domain Adaptability** | Generic answers | Expert on your own documents and knowledge base |
 
 <br/>
 
@@ -895,7 +895,7 @@ GET /api/v1/info
 ```json
 {
   "status": "ok",
-  "app_name": "MINI-TOURISM RAG",
+  "app_name": "MINI-RAG",
   "version": "1.0.0",
   "environment": "production",
   "backends": {
@@ -1995,7 +1995,7 @@ This project demonstrates solutions to real production AI engineering problems:
 
 ```mermaid
 gantt
-    title MINI-TOURISM RAG Development Roadmap
+    title MINI-RAG Development Roadmap
     dateFormat  YYYY-MM-DD
     section v1.0 — Foundation ✅
     Core RAG Pipeline        :done, 2025-01-01, 2025-02-15
@@ -2166,7 +2166,7 @@ See [LICENSE](./LICENSE) for the full text.
   <strong>Version:</strong> 1.0.0 &nbsp;·&nbsp;
   <strong>Status:</strong> ✅ Production Ready &nbsp;·&nbsp;
   <strong>Last Updated:</strong> May 2026 &nbsp;·&nbsp;
-  <strong>Domain:</strong> Tourism (Egypt &amp; Arab World) &nbsp;·&nbsp;
+  <strong>Domain:</strong> Domain-Agnostic (Any Knowledge Base) &nbsp;·&nbsp;
   <strong>License:</strong> MIT
 </sub>
 

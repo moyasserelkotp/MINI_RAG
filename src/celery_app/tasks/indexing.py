@@ -22,29 +22,29 @@ logger = logging.getLogger(__name__)
 #  Helper: run async from sync context 
 
 def _run_async(coro):
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, coro).result()
-        return loop.run_until_complete(coro)
-    except RuntimeError:
-        return asyncio.run(coro)
+    """Execute an async coroutine inside a Celery (sync) task.
+
+    Celery workers are synchronous, so asyncio.run() is always safe here.
+    get_event_loop() is deprecated in Python 3.10+ and raises RuntimeError
+    in 3.12+, so we avoid it entirely.
+    """
+    return asyncio.run(coro)
 
 
 #  Base task 
 
 class IndexingBaseTask(Task):
     abstract = True
-    max_retries = 3
-    default_retry_delay = 15
+    # max_retries / retry_backoff are set on the task decorator below
+    # (single source of truth — avoids config drift)
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        logger.error("Indexing task %s FAILED | error=%s", task_id, exc, exc_info=einfo)
+        logger.error("Indexing task %s FAILED permanently after retries | error=%s",
+                     task_id, exc, exc_info=einfo)
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
-        logger.warning("Indexing task %s RETRYING | error=%s", task_id, exc)
+        logger.warning("Indexing task %s RETRYING (attempt %d/%d) | error=%s",
+                       task_id, self.request.retries + 1, self.max_retries, exc)
 
 
 #  Index-push task 
@@ -56,6 +56,12 @@ class IndexingBaseTask(Task):
     queue="indexing",
     track_started=True,
     trail=True,
+    # Retry config (single source of truth)
+    max_retries=3,
+    default_retry_delay=15,      # seconds before first retry
+    retry_backoff=True,          # exponential: 15s, 30s, 60s
+    retry_backoff_max=180,       # cap at 3 minutes
+    retry_jitter=True,           # avoid thundering herd
 )
 def index_project_into_vectordb(
     self,
@@ -152,7 +158,11 @@ def index_project_into_vectordb(
                 is_first_page = False
 
                 if not is_inserted:
-                    return {"signal": "INSERT_INTO_VECTORDB_ERROR"}
+                    # Qdrant write failed — raise so Celery retries the task
+                    raise RuntimeError(
+                        f"Vector DB insert failed on page {page_no - 1} "
+                        f"for project '{project_id}'"
+                    )
 
                 inserted_total += len(page_chunks)
                 logger.info(
@@ -176,6 +186,11 @@ def index_project_into_vectordb(
         result = _run_async(_async_index())
         logger.info("Task %s | DONE | result=%s", task_id, result.get("signal"))
         return result
+    except self.MaxRetriesExceededError:
+        # All retries exhausted — task goes to dead_letters queue
+        logger.error("Task %s | MAX RETRIES EXCEEDED — moving to dead_letters", task_id)
+        raise
     except Exception as exc:
-        logger.exception("Task %s | UNHANDLED ERROR: %s", task_id, exc)
-        raise self.retry(exc=exc, countdown=15)
+        logger.exception("Task %s | UNHANDLED ERROR (retry %d/%d): %s",
+                         task_id, self.request.retries, self.max_retries, exc)
+        raise self.retry(exc=exc)

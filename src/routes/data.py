@@ -217,12 +217,18 @@ async def _process_project_files(
 
 # ── Process single file ───────────────────────────────────────────────────────
 
-@data_router.post("/process-file/{project_id}")
+@data_router.post(
+    "/process-file/{project_id}",
+    deprecated=True,  # Use POST /api/v1/tasks/process-file/{project_id} instead
+)
 async def process_single_file(
     request: Request,
     project_id: str,
     process_request: ProcessRequest,
 ):
+    """DEPRECATED — use POST /api/v1/tasks/process-file/{project_id} for async processing.
+    This endpoint blocks the event loop during chunking and is not suitable for production.
+    """
     if not process_request.file_id:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -242,12 +248,18 @@ async def process_single_file(
 
 # ── Process all files ─────────────────────────────────────────────────────────
 
-@data_router.post("/process-all/{project_id}")
+@data_router.post(
+    "/process-all/{project_id}",
+    deprecated=True,  # Use POST /api/v1/tasks/process-all/{project_id} instead
+)
 async def process_all_files(
     request: Request,
     project_id: str,
     process_request: ProcessRequest,
 ):
+    """DEPRECATED — use POST /api/v1/tasks/process-all/{project_id} for async processing.
+    This endpoint blocks the event loop during chunking and is not suitable for production.
+    """
     return await _process_project_files(
         request,
         project_id,

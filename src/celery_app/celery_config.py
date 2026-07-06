@@ -114,7 +114,7 @@ celery_app: Celery = create_celery_app()
 """
 celery_config.py
 ================
-Celery application factory for MINI-TOURISM RAG.
+Celery application factory for MINI-RAG.
 
 Broker  : RabbitMQ  (AMQP)
 Backend : Redis     (result store + optional cache)

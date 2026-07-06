@@ -8,7 +8,7 @@ from pydantic import validator
 
 class Settings(BaseSettings):
 
-    APP_NAME: str = "MINI-TOURISM RAG"
+    APP_NAME: str = "MINI-RAG"
     APP_VERSION: str = "1.0.0"
 
     # Application Settings 

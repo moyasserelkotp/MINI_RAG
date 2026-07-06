@@ -86,29 +86,31 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - ./env/.env.app
 
-  # Celery Beat — Periodic task scheduler (optional)
-  celery-beat:
-    image: minirag-celery
-    pull_policy: never
-    container_name: celery-beat
-    command: >
-      celery -A celery_app.celery_config:celery_app beat
-      --loglevel=info
-      --scheduler celery.beat:PersistentScheduler
-    networks:
-      - backend
-    restart: always
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    env_file:
-      - ./env/.env.app
+  # Celery Beat — Periodic task scheduler
+  # NOTE: Disabled — beat_schedule is empty. Re-enable when periodic tasks are added.
+  # celery-beat:
+  #   image: minirag-celery
+  #   pull_policy: never
+  #   container_name: celery-beat
+  #   command: >
+  #     celery -A celery_app.celery_config:celery_app beat
+  #     --loglevel=info
+  #     --scheduler celery.beat:PersistentScheduler
+  #   networks:
+  #     - backend
+  #   restart: always
+  #   depends_on:
+  #     rabbitmq:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   env_file:
+  #     - ./env/.env.app
+
 
   # Flower — Celery monitoring UI
   flower:
@@ -151,13 +153,11 @@ services:
   mongodb:
     image: mongo:8.0
     container_name: mongodb
-    ports:
-      - "27017:27017"
+    # No ports exposed — only reachable within the backend network
     volumes:
       - mongodb_data:/data/db
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: password
+    env_file:
+      - ./env/.env.app
     networks:
       - backend
     restart: always
@@ -172,22 +172,24 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.13.6
     container_name: qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
+    # No ports exposed — only reachable within the backend network
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
       - backend
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # RabbitMQ (Message Broker)
   rabbitmq:
     image: rabbitmq:4.1.2-management-alpine
     container_name: rabbitmq
-    ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI port
+    # No ports exposed — AMQP and management UI only reachable within backend network
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
@@ -207,8 +209,7 @@ services:
   redis:
     image: redis:8.0.3-alpine
     container_name: redis
-    ports:
-      - "6379:6379"
+    # No ports exposed — only reachable within the backend network
     volumes:
       - redis_data:/data
     env_file:
@@ -272,15 +273,13 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
-    ports:
-      - "9100:9100"
+    # No ports exposed — scraped by Prometheus internally
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /:/rootfs:ro
+      # Removed /:/rootfs:ro — mounts entire host root, unnecessary security risk
     command:
       - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     networks:
@@ -291,10 +290,11 @@ services:
   mongodb-exporter:
     image: percona/mongodb_exporter:0.50.0
     container_name: mongodb-exporter
-    ports:
-      - "9216:9216"
+    # No ports exposed — scraped by Prometheus internally
     environment:
-      MONGODB_URI: "mongodb://root:password@mongodb:27017/?authSource=admin"
+      MONGODB_URI: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin"
+    env_file:
+      - ./env/.env.app
     depends_on:
       - mongodb
     networks:

@@ -176,7 +176,7 @@ class QdrantDBProvider(VectorDBInterface):
             return False
 
         if record_id is None:
-            record_id = int(hashlib.md5(text.encode()).hexdigest(), 16) % (2**63 - 1)
+            record_id = int(hashlib.sha256(text.encode()).hexdigest(), 16) % (2**63 - 1)
 
         try:
             # Use upsert (idempotent) instead of deprecated upload_records
@@ -209,7 +209,7 @@ class QdrantDBProvider(VectorDBInterface):
 
         if record_ids is None:
             record_ids = [
-                int(hashlib.md5(f"{i}_{t}".encode()).hexdigest(), 16) % (2**63 - 1)
+                int(hashlib.sha256(f"{i}_{t}".encode()).hexdigest(), 16) % (2**63 - 1)
                 for i, t in enumerate(texts)
             ]
 

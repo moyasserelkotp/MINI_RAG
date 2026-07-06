@@ -1,4 +1,4 @@
-# 🚀 MINI RAG: Advanced Retrieval-Augmented Generation System
+# 🚀 MINI-RAG: Advanced Retrieval-Augmented Generation System
 
 > **Production-Ready AI System** that transforms static documents into intelligent, context-aware conversational AI experts
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 🎯 What is MINI-TOURISM RAG?
+## 🎯 What is MINI-RAG?
 
 **RAG (Retrieval-Augmented Generation)** combines document retrieval with LLM intelligence:
 
@@ -25,7 +25,7 @@
 📄 Your Documents → 🔍 Search → 📍 Retrieve Relevant Chunks → 🤖 LLM + Context → 💬 Smart Response
 ```
 
-**MINI-TOURISM RAG** provides:
+**MINI-RAG** provides:
 - 📁 **Document Upload & Processing** - PDF, DOCX, TXT, CSV, HTML, MD
 - 🔗 **Vector Search** - Find relevant information from your documents
 - 🧠 **Smart Memory** - Window, Summary, Entity, and Semantic Cache memory
@@ -86,8 +86,8 @@ VECTOR_DB_BACKEND="QDRANT"         # or FAISS, PINECONE, CHROMA
 
 ```bash
 # Clone & setup
-git clone https://github.com/your-org/MINI-TOURISM_RAG.git
-cd MINI-TOURISM_RAG
+git clone https://github.com/your-org/MINI-RAG.git
+cd MINI-RAG
 
 # Configure environment
 cp .env.example .env
@@ -224,7 +224,7 @@ docker-compose -f docker/docker-compose.yml logs minirag | grep "NLPController"
 
 ```bash
 curl -X POST "http://localhost:8000/api/v1/data/upload/my_project" \
-  -F "file=@tourism_guide.pdf"
+  -F "file=@my_document.pdf"
 ```
 
 Response:
@@ -276,7 +276,7 @@ Response:
   "sources": [
     {
       "text": "Excerpt from document...",
-      "source": "tourism_guide.pdf"
+      "source": "my_document.pdf"
     }
   ]
 }
@@ -470,21 +470,21 @@ BASE_URL = "http://localhost:8000/api/v1"
 
 # Upload document
 with open("guide.pdf", "rb") as f:
-    r = requests.post(f"{BASE_URL}/data/upload/tourism", files={"file": f})
+    r = requests.post(f"{BASE_URL}/data/upload/my_project", files={"file": f})
     file_id = r.json()["file_id"]
 
 # Process into chunks
-requests.post(f"{BASE_URL}/data/process/tourism", json={
+requests.post(f"{BASE_URL}/data/process/my_project", json={
     "file_id": file_id,
     "chunk_size": 512,
     "overlap_size": 50
 })
 
 # Index into vector DB
-requests.post(f"{BASE_URL}/nlp/index/push/tourism", json={"do_reset": 1})
+requests.post(f"{BASE_URL}/nlp/index/push/my_project", json={"do_reset": 1})
 
 # Chat
-response = requests.post(f"{BASE_URL}/nlp/chat/tourism", json={
+response = requests.post(f"{BASE_URL}/nlp/chat/my_project", json={
     "query": "Best attractions?",
     "session_id": "user123"
 })
@@ -569,4 +569,4 @@ This project is licensed under the MIT License - see [LICENSE](./LICENSE) for de
 
 ---
 
-**Made with ❤️ for Tourism AI**
+**Made with ❤️ for AI**
