@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, UploadFile, status, Request
+from fastapi import APIRouter, Depends, UploadFile, File, status, Request
 from fastapi.responses import JSONResponse
 from helpers.config import get_settings, Settings
 from controllers import DataController, ProjectController, ProcessController
 import aiofiles
 import time
 
-from .schemes.data import ProcessRequest
+from .schemes.data import ProcessRequest, URLIngestRequest
 from models import ResponseSignal
 from models.AssetModel import AssetModel
 from models.ProjectModel import ProjectModel
@@ -14,6 +14,9 @@ from models.db_schemes import DataChunk, Asset
 from utils.metrics import record_chunking_latency
 
 import os
+import re
+import hashlib
+from typing import List as ListType
 from bson.objectid import ObjectId
 import logging
 from models.enums.AssetTypeEnum import AssetTypeEnum
@@ -357,12 +360,234 @@ async def delete_asset(request: Request, project_id: str, asset_id: str):
             content={"signal": ResponseSignal.DELETE_ASSET_ERROR.value},
         )
 
+# ── Phase 9: Batch Upload ─────────────────────────────────────────────────────
+
+@data_router.post("/upload/batch/{project_id}", summary="Upload multiple files at once")
+async def upload_batch(
+    request: Request,
+    project_id: str,
+    files: ListType[UploadFile] = File(...),
+    app_settings: Settings = Depends(get_settings),
+):
+    if len(files) > 20:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": "BATCH_UPLOAD_LIMIT_EXCEEDED", "error": "Maximum 20 files allowed per batch"}
+        )
+    project_model = await ProjectModel.create_instance(
+        db_client=request.app.db_client
+    )
+    project = await project_model.get_project_or_create_one(
+        project_id=project_id
+    )
+
+    data_controller = DataController()
+    asset_model = await AssetModel.create_instance(
+        db_client=request.app.db_client
+    )
+
+    results = []
+    for file in files:
+        is_valid, signal = data_controller.validate_uploaded_file(file=file)
+        if not is_valid:
+            results.append({"filename": file.filename, "status": "failed", "signal": signal.value})
+            continue
+
+        file_path, file_id = data_controller.generate_unique_filepath(
+            orig_file_name=file.filename, project_id=project_id
+        )
+
+        try:
+            async with aiofiles.open(file_path, "wb") as f:
+                while chunk := await file.read(app_settings.FILE_DEFAULT_CHUNK_SIZE):
+                    await f.write(chunk)
+        except Exception as e:
+            logger.error(f"Error while uploading file {file.filename}: {e}")
+            results.append({"filename": file.filename, "status": "failed", "signal": ResponseSignal.FILE_UPLOAD_FAILED.value})
+            continue
+
+        asset = Asset(
+            asset_project_id=project.id,
+            asset_type=AssetTypeEnum.FILE.value,
+            asset_name=file_id,
+            asset_size=os.path.getsize(file_path),
+        )
+        try:
+            asset_record = await asset_model.create_asset(asset=asset)
+        except Exception as e:
+            logger.error("Failed to create asset record in DB: %s", e)
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+            results.append({"filename": file.filename, "status": "failed", "signal": "ASSET_CREATION_FAILED"})
+            continue
+
+        results.append({
+            "filename": file.filename,
+            "status": "success",
+            "file_id": str(asset_record.id),
+            "asset_name": file_id
+        })
+
     return JSONResponse(
         content={
-            "signal": ResponseSignal.DELETE_ASSET_SUCCESS.value,
-            "asset_id": asset_id,
-            "asset_name": asset.asset_name,
-            "deleted_chunks": deleted_chunks,
+            "signal": "BATCH_UPLOAD_COMPLETED",
+            "project_id": project_id,
+            "results": results
+        }
+    )
+
+
+# ── Phase 7: URL Ingestion ────────────────────────────────────────────────────
+
+@data_router.post("/ingest/url/{project_id}", summary="Ingest content from a public URL")
+async def ingest_url(
+    request: Request,
+    project_id: str,
+    ingest_request: URLIngestRequest,
+):
+    import httpx
+    from bs4 import BeautifulSoup
+    import urllib.parse
+    import ipaddress
+    import asyncio
+
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    project = await project_model.get_project_or_create_one(project_id=project_id)
+
+    # 1. SSRF Protection & Fetch URL
+    parsed = urllib.parse.urlparse(ingest_request.url)
+    if not parsed.hostname:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"signal": "INVALID_URL", "error": "Invalid URL provided"})
+
+    try:
+        loop = asyncio.get_running_loop()
+        addr_info = await loop.getaddrinfo(parsed.hostname, None)
+        for res in addr_info:
+            ip = ipaddress.ip_address(res[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    content={"signal": "URL_BLOCKED", "error": "Private or internal IPs are not allowed"}
+                )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            content={"signal": "URL_RESOLUTION_FAILED", "error": f"Could not resolve hostname: {e}"}
+        )
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            async with client.stream("GET", ingest_request.url) as resp:
+                resp.raise_for_status()
+                content_length = resp.headers.get("Content-Length")
+                if content_length and int(content_length) > 5 * 1024 * 1024:
+                    return JSONResponse(
+                        status_code=status.HTTP_400_BAD_REQUEST, 
+                        content={"signal": "FILE_TOO_LARGE", "error": "URL content exceeds 5MB limit"}
+                    )
+                
+                chunks = []
+                bytes_downloaded = 0
+                async for chunk in resp.aiter_bytes():
+                    bytes_downloaded += len(chunk)
+                    if bytes_downloaded > 5 * 1024 * 1024:
+                        return JSONResponse(
+                            status_code=status.HTTP_400_BAD_REQUEST, 
+                            content={"signal": "FILE_TOO_LARGE", "error": "URL content exceeds 5MB limit"}
+                        )
+                    chunks.append(chunk)
+                html_content = b"".join(chunks).decode("utf-8", errors="ignore")
+    except Exception as e:
+        logger.error(f"Failed to fetch URL {ingest_request.url}: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": "URL_FETCH_FAILED", "error": str(e)}
+        )
+
+    # 2. Extract text using BeautifulSoup
+    soup = BeautifulSoup(html_content, "html.parser")
+    # Remove scripts, styles
+    for script_or_style in soup(["script", "style", "noscript", "header", "footer", "nav"]):
+        script_or_style.decompose()
+
+    text = soup.get_text(separator="\n")
+    # Clean up whitespace
+    text = re.sub(r'\n+', '\n', text).strip()
+
+    if not text:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"signal": "URL_EXTRACT_FAILED", "error": "No text content found"}
+        )
+
+    # 3. Create a pseudo-Asset to represent the URL
+    url_hash = hashlib.md5(ingest_request.url.encode()).hexdigest()[:12]
+    asset_name = f"url_{url_hash}"
+
+    asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+    # Check if exists and do_reset is requested
+    existing_asset = await asset_model.collection.find_one({
+        "asset_project_id": project.id,
+        "asset_name": asset_name
+    })
+
+    chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
+
+    if existing_asset:
+        if not ingest_request.do_reset:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"signal": "URL_ALREADY_INGESTED", "asset_id": str(existing_asset["_id"])}
+            )
+        # Reset: delete old chunks
+        await chunk_model.delete_chunks_by_asset_id(asset_id=existing_asset["_id"])
+        asset_id = existing_asset["_id"]
+    else:
+        new_asset = Asset(
+            asset_project_id=project.id,
+            asset_type=AssetTypeEnum.FILE.value,  # treating URL as a file for simplicity
+            asset_name=asset_name,
+            asset_size=len(text),
+        )
+        new_asset_record = await asset_model.create_asset(asset=new_asset)
+        asset_id = new_asset_record.id
+
+    # 4. Chunk text directly in a separate thread to unblock event loop
+    from langchain_core.documents import Document
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+    doc = Document(page_content=text, metadata={"source": ingest_request.url, "type": "url"})
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=ingest_request.chunk_size,
+        chunk_overlap=ingest_request.overlap_size,
+    )
+    chunks = await asyncio.to_thread(splitter.split_documents, [doc])
+
+    file_chunks = []
+    for chunk in chunks:
+        file_chunks.append(
+            DataChunk(
+                chunk_text=chunk.page_content,
+                chunk_metadata=chunk.metadata,
+                chunk_order=1,
+                chunk_project_id=project.id,
+                chunk_asset_id=ObjectId(asset_id),
+            )
+        )
+
+    if file_chunks:
+        inserted_count = await chunk_model.insert_many_chunks(chunks=file_chunks)
+    else:
+        inserted_count = 0
+
+    return JSONResponse(
+        content={
+            "signal": "URL_INGESTION_SUCCESS",
+            "url": ingest_request.url,
+            "inserted_chunks": inserted_count,
+            "asset_id": str(asset_id)
         }
     )
 

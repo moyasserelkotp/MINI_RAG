@@ -55,3 +55,24 @@ class SessionModel(BaseDataModel):
             {"session_id": session_id},
             {"$inc": {"message_count": amount}, "$set": {"updated_at": datetime.utcnow()}}
         )
+
+    # Phase 6: Session management methods
+    async def get_all_sessions(self, project_id):
+        """Return all sessions for a given project_id (ObjectId or str)."""
+        cursor = self.collection.find({"project_id": project_id}).sort("created_at", -1).limit(500)
+        sessions = []
+        async for doc in cursor:
+            sessions.append(ChatSession(**doc))
+        return sessions
+
+    async def delete_session(self, session_id: str):
+        """Delete a session document by session_id string."""
+        result = await self.collection.delete_one({"session_id": session_id})
+        return result.deleted_count > 0
+
+    async def get_session_by_id(self, session_id: str):
+        """Return a single session by its session_id string."""
+        record = await self.collection.find_one({"session_id": session_id})
+        if record:
+            return ChatSession(**record)
+        return None

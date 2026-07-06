@@ -347,113 +347,182 @@ class NLPController(BaseController):
 
 
     #  Answer 
+    async def answer_rag_question(
+        self,
+        project: Project,
+        query: str,
+        limit: int = 10,
+        use_hybrid: bool = True,
+        score_threshold: Optional[float] = None,
+        use_rerank: bool = True,
+        session_id: Optional[str] = None,
+        metadata_filter: Optional[dict] = None,   # Phase 5: optional metadata filter
+    ):
+        """Run full RAG pipeline and return (answer, full_prompt, chat_history, sources, cached).
 
-    #  RAG Subroutines 
+        Returns:
+            answer      – str | None | False
+            full_prompt – str | None
+            chat_history – list | None
+            sources     – list[dict] with keys text, source, page, score
+            cached      – bool (True when answer came from semantic cache)
+        """
+        answer, full_prompt, chat_history = None, None, None
+        sources: List[dict] = []
+        cached = False
 
-    async def _prepare_session(self, session_id: Optional[str], project_id: str, use_window: bool, use_summary: bool, window_k: int):
-        session_obj, session_messages, session_model, message_model = None, [], None, None
+        # Feature flags
+        use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
+        window_k = getattr(self.app_settings, "WINDOW_MEMORY_K", 5)
+        use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
+        use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
+        use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
+        use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
+        cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
+
+        # 0. Database Session Initialization (Needed early for condensation)
+        session_obj = None
+        session_messages = []
+        session_model = None
+        message_model = None
+        
         if session_id:
             from models.SessionModel import SessionModel
             from models.MessageModel import MessageModel
             session_model = await SessionModel.create_instance(self.db_client)
             message_model = await MessageModel.create_instance(self.db_client)
+            
             if use_window or use_summary:
-                session_obj = await session_model.get_session_or_create_one(session_id, project_id)
+                session_obj = await session_model.get_session_or_create_one(session_id, project.id)
             if use_window and session_obj:
+                # History limit is set by WINDOW_MEMORY_K
                 session_messages = await message_model.get_messages_by_session(session_id, limit=window_k)
-        return session_obj, session_messages, session_model, message_model
 
-    async def _check_semantic_cache(self, project_id: str, cache_vec: list, use_cache: bool, cache_threshold: float):
-        if not use_cache:
-            return None
-        self._init_cache_collection(project_id)
-        cache_col_name = self._get_cache_collection_name(project_id)
-        try:
-            cached_results = await asyncio.to_thread(
-                self.vectordb_client.search_by_vector,
-                collection_name=cache_col_name, vector=cache_vec, limit=1, score_threshold=cache_threshold
-            )
-            if cached_results and len(cached_results) > 0:
-                cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
-                if cached_answer:
+        # 1. Query Condensation (Context Awareness)
+        search_query = query
+        if session_messages:
+            search_query = await self._condense_query(query, session_messages)
+            if search_query != query:
+                logger.info("Condensed query: '%s' -> '%s'", query, search_query)
+
+        # 2. Embed Search Query
+        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
+        if not cache_vec:
+            logger.error("Failed to embed search query.")
+            return False, None, None, [], False
+
+        # 3. Semantic Cache Check
+        self._init_cache_collection(project.project_id)
+        cache_col_name = self._get_cache_collection_name(project.project_id)
+
+        if use_cache:
+            try:
+                cached_results = await asyncio.to_thread(
+                    self.vectordb_client.search_by_vector,
+                    collection_name=cache_col_name, vector=cache_vec, limit=1, score_threshold=cache_threshold
+                )
+                if cached_results and len(cached_results) > 0:
+                    logger.info("Semantic Cache hit for query: %s", search_query)
+                    cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
+                    if cached_answer:
+                        try:
+                            record_cache_hit(project_id=project.project_id)
+                        except Exception:
+                            pass
+                        # Return immediately with cached=True flag
+                        return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", [], [], True
+                    # Cache entry exists but answer field is missing — treat as miss
                     try:
-                        record_cache_hit(project_id=project_id)
+                        record_cache_miss(project_id=project.project_id)
                     except Exception:
                         pass
-                    return cached_answer
-                try:
-                    record_cache_miss(project_id=project_id)
-                except Exception:
-                    pass
-            else:
-                try:
-                    record_cache_miss(project_id=project_id)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.error("Error accessing semantic cache: %s", e)
-        return None
-
-    async def _retrieve_and_rerank_context(self, project, search_query, limit, use_hybrid, score_threshold, metadata_filter, use_vector, use_rerank):
-        if not use_vector:
-            return [], []
-        
-        retrieved_documents = await asyncio.to_thread(
-            self.search_vector_db_collection,
-            project=project, text=search_query, limit=limit,
-            use_hybrid=use_hybrid, score_threshold=score_threshold,
-            metadata_filter=metadata_filter,
-        )
-        if retrieved_documents is None:
-            return [], []
-
-        sources = [
-            {
-                "text": d.payload.get("text", "")[:300],
-                "source": (d.payload.get("metadata") or {}).get("source", "unknown"),
-                "page": (d.payload.get("metadata") or {}).get("page"),
-                "score": round(float(getattr(d, "score", 0.0)), 4),
-            }
-            for d in retrieved_documents
-        ]
-
-        should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
-        if should_rerank and retrieved_documents:
-            try:
-                cohere_client = self.cohere_client
-                if cohere_client:
-                    docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
-                    rerank_model = getattr(self.app_settings, "RERANK_MODEL_ID", "rerank-multilingual-v3.0")
-                    reranked = await asyncio.to_thread(
-                        cohere_client.rerank,
-                        model=rerank_model, query=search_query, documents=docs_texts, top_n=min(limit, len(docs_texts))
-                    )
-                    reranked_docs = []
-                    for r in reranked.results:
-                        d = retrieved_documents[r.index]
-                        d.score = float(r.relevance_score)
-                        reranked_docs.append(d)
-                    retrieved_documents = reranked_docs
-                    sources = [
-                        {
-                            "text": d.payload.get("text", "")[:300],
-                            "source": (d.payload.get("metadata") or {}).get("source", "unknown"),
-                            "page": (d.payload.get("metadata") or {}).get("page"),
-                            "score": round(float(getattr(d, "score", 0.0)), 4),
-                        }
-                        for d in reranked_docs
-                    ]
                 else:
-                    logger.warning("USE_RERANK=True but cohere_client is not initialised; skipping rerank.")
+                    try:
+                        record_cache_miss(project_id=project.project_id)
+                    except Exception:
+                        pass
             except Exception as e:
-                logger.error("Cohere Rerank failed: %s", e)
+                logger.error("Error accessing semantic cache: %s", e)
 
-        return retrieved_documents, sources
+        # 4. Entity Memory Retrieval
+        entities_text = ""
+        if session_id and use_entity:
+            try:
+                ent_col = self._get_entity_collection_name(project.project_id)
+                self._init_entity_collection(project.project_id)
+                ent_docs = await asyncio.to_thread(
+                    self.vectordb_client.search_by_vector,
+                    collection_name=ent_col,
+                    vector=cache_vec,
+                    limit=3,
+                    score_threshold=0.6
+                )
+                if ent_docs:
+                    entities_text = "\n".join([d.payload.get("text", "") for d in ent_docs])
+            except Exception as e:
+                logger.error("Error accessing entity memory: %s", e)
 
-    def _format_system_prompt(self, query, session_obj, session_messages, entities_text, retrieved_documents, use_summary, use_entity, use_window):
+        # 5. Vector DB Retrieval
+        retrieved_documents = []
+        if use_vector:
+            retrieved_documents = await asyncio.to_thread(
+                self.search_vector_db_collection,
+                project=project, text=search_query, limit=limit,
+                use_hybrid=use_hybrid, score_threshold=score_threshold,
+                metadata_filter=metadata_filter,   # Phase 5
+            )
+            if retrieved_documents is None:
+                return False, None, None, [], False
+
+            # Build sources list from retrieved docs before reranking
+            sources = [
+                {
+                    "text": d.payload.get("text", "")[:300],  # Truncate for API response
+                    "source": (d.payload.get("metadata") or {}).get("source", "unknown"),
+                    "page": (d.payload.get("metadata") or {}).get("page"),
+                    "score": round(float(getattr(d, "score", 0.0)), 4),
+                }
+                for d in retrieved_documents
+            ]
+
+            # Cohere Rerank
+            should_rerank = use_rerank and getattr(self.app_settings, "USE_RERANK", False)
+            if should_rerank and retrieved_documents:
+                try:
+                    # FIX: use pre-built client injected at startup instead of creating per-request
+                    cohere_client = self.cohere_client
+                    if cohere_client:
+                        docs_texts = [d.payload.get("text", "") for d in retrieved_documents]
+                        rerank_model = getattr(self.app_settings, "RERANK_MODEL_ID", "rerank-multilingual-v3.0")
+                        reranked = await asyncio.to_thread(
+                            cohere_client.rerank,
+                            model=rerank_model, query=search_query, documents=docs_texts, top_n=min(limit, len(docs_texts))
+                        )
+                        reranked_docs = []
+                        for r in reranked.results:
+                            d = retrieved_documents[r.index]
+                            d.score = float(r.relevance_score)
+                            reranked_docs.append(d)
+                        retrieved_documents = reranked_docs
+                        # Rebuild sources list with updated rerank scores
+                        sources = [
+                            {
+                                "text": d.payload.get("text", "")[:300],
+                                "source": (d.payload.get("metadata") or {}).get("source", "unknown"),
+                                "page": (d.payload.get("metadata") or {}).get("page"),
+                                "score": round(float(getattr(d, "score", 0.0)), 4),
+                            }
+                            for d in reranked_docs
+                        ]
+                    else:
+                        logger.warning("USE_RERANK=True but cohere_client is not initialised; skipping rerank.")
+                except Exception as e:
+                    logger.error("Cohere Rerank failed: %s", e)
+
+        # 6. Prompt Construction
         system_prompt = self.template_parser.get("rag", "system_prompt")
         
-        if use_summary and session_obj and getattr(session_obj, "summary", None):
+        if use_summary and session_obj and session_obj.summary:
             system_prompt += f"\n\n[Conversation Summary]:\n{session_obj.summary}"
 
         if use_entity and entities_text:
@@ -464,6 +533,7 @@ class NLPController(BaseController):
         ]
 
         if use_window:
+            # We use reversed because get_messages_by_session usually returns latest messages first
             for msg in reversed(session_messages):
                 role = self.generation_client.enums.USER.value if msg.role == "user" else self.generation_client.enums.ASSISTANT.value
                 chat_history_prompts.append(self.generation_client.construct_prompt(prompt=msg.text, role=role))
@@ -483,101 +553,37 @@ class NLPController(BaseController):
         documents_prompts = "\n\n".join(document_parts)
         footer_prompt = self.template_parser.get("rag", "footer_prompt", {"query": query})
         full_prompt = "\n\n".join([documents_prompts, footer_prompt]) if documents_prompts else footer_prompt
-        
-        return full_prompt, chat_history_prompts
-
-
-    async def answer_rag_question(
-        self,
-        project: Project,
-        query: str,
-        limit: int = 10,
-        use_hybrid: bool = True,
-        score_threshold: Optional[float] = None,
-        use_rerank: bool = True,
-        session_id: Optional[str] = None,
-        metadata_filter: Optional[dict] = None,   # Phase 5: optional metadata filter
-    ):
-        """Run full RAG pipeline and return (answer, full_prompt, chat_history, sources, cached)."""
-        answer, full_prompt, chat_history_prompts = None, None, None
-        sources: List[dict] = []
-        cached = False
-
-        use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
-        window_k = getattr(self.app_settings, "WINDOW_MEMORY_K", 5)
-        use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
-        use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
-        use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
-        use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
-        cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
-
-        # 0. Session Initialization
-        session_obj, session_messages, session_model, message_model = await self._prepare_session(
-            session_id, project.project_id, use_window, use_summary, window_k
-        )
-
-        # 1. Query Condensation
-        search_query = query
-        if session_messages:
-            search_query = await self._condense_query(query, session_messages)
-
-        # 2. Embed Search Query
-        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
-        if not cache_vec:
-            return False, None, None, [], False
-
-        # 3. Semantic Cache Check
-        cached_answer = await self._check_semantic_cache(project.project_id, cache_vec, use_cache, cache_threshold)
-        if cached_answer:
-            return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", [], [], True
-
-        # 4. Entity Memory Retrieval
-        entities_text = ""
-        if session_id and use_entity:
-            try:
-                ent_col = self._get_entity_collection_name(project.project_id)
-                self._init_entity_collection(project.project_id)
-                ent_docs = await asyncio.to_thread(
-                    self.vectordb_client.search_by_vector,
-                    collection_name=ent_col, vector=cache_vec, limit=3, score_threshold=0.6
-                )
-                if ent_docs:
-                    entities_text = "\n".join([d.payload.get("text", "") for d in ent_docs])
-            except Exception as e:
-                logger.error("Error accessing entity memory: %s", e)
-
-        # 5. Vector DB Retrieval & Rerank
-        retrieved_documents, sources = await self._retrieve_and_rerank_context(
-            project, search_query, limit, use_hybrid, score_threshold, metadata_filter, use_vector, use_rerank
-        )
-
-        # 6. Prompt Construction
-        full_prompt, chat_history_prompts = self._format_system_prompt(
-            query, session_obj, session_messages, entities_text, retrieved_documents, use_summary, use_entity, use_window
-        )
 
         # 7. Generate Answer
+        # We no longer short-circuit based on retrieved_documents alone to allow greetings
         answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history_prompts)
 
         # 8. Post-generation Memory Saves
         if answer:
+            # Semantic Cache Sub
             is_negative_answer = "cannot answer" in answer.lower() or "not contain the answer" in answer.lower()
 
             if use_cache and not is_negative_answer:
                 try:
+                    # FIX: use search_query (the condensed query) as the stored text so
+                    # the vector and stored text are always aligned for future lookups.
                     cache_id = int(hashlib.sha256(search_query.encode()).hexdigest(), 16) % (2**63 - 1)
-                    cache_col_name = self._get_cache_collection_name(project.project_id)
                     task = asyncio.create_task(
                         asyncio.to_thread(
                             self.vectordb_client.insert_one,
                             collection_name=cache_col_name,
-                            text=search_query, vector=cache_vec, metadata={"answer": answer}, record_id=cache_id,
+                            text=search_query,
+                            vector=cache_vec,
+                            metadata={"answer": answer},
+                            record_id=cache_id,
                         )
                     )
+                    # FIX: log errors from fire-and-forget tasks instead of silently dropping them
                     task.add_done_callback(_safe_task_callback("Cache write"))
                 except Exception:
                     pass
 
+            # Window + Summary Sub
             if session_id and session_model and message_model:
                 from models.db_schemes.chat_message import ChatMessage
                 await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
@@ -588,17 +594,20 @@ class NLPController(BaseController):
                     summary_task = asyncio.create_task(
                         self._update_session_summary(session_id, project.id, session_model, message_model)
                     )
+                    # FIX: log errors from fire-and-forget summary task
                     summary_task.add_done_callback(_safe_task_callback("Session summary"))
 
+            # Entity Action Sub
             if session_id and use_entity:
                 entity_task = asyncio.create_task(
                     self._extract_and_save_entities(session_id, project, query, answer, cache_vec)
                 )
+                # FIX: log errors from fire-and-forget entity extraction task
                 entity_task.add_done_callback(_safe_task_callback("Entity extraction"))
 
-        return answer, full_prompt, chat_history_prompts, sources, False
-    #  Streaming 
+        return answer, full_prompt, chat_history_prompts, sources, cached
 
+    #  Streaming 
     async def answer_rag_stream(
         self,
         project: Project,
@@ -607,71 +616,131 @@ class NLPController(BaseController):
         use_hybrid: bool = True,
         score_threshold: Optional[float] = None,
         session_id: Optional[str] = None,
-        metadata_filter: Optional[dict] = None,
     ):
-        """Run the RAG pipeline and yield LLM tokens one-by-one (async generator)."""
+        """Run the RAG pipeline and yield LLM tokens one-by-one (async generator).
+
+        The pipeline is identical to ``answer_rag_question`` up to Step 6
+        (prompt construction). At Step 7 we call ``stream_text()`` on the
+        generation client instead of ``generate_text()``, yielding each token
+        as it arrives.
+
+        Raises StopAsyncIteration when the stream is complete.
+        Falls back to a single full-answer yield if the provider doesn't
+        implement ``stream_text()``.
+        """
+        # Re-use the full pipeline by calling answer_rag_question first to get
+        # the prompt components (retrieval, rerank, memory, cache), then stream.
+        # Note: if a cached answer is found it will be yielded as-is.
         import asyncio
 
+        # Feature flags
         use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
         window_k = getattr(self.app_settings, "WINDOW_MEMORY_K", 5)
-        use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
-        use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
-        use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
         use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
         cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
 
-        session_obj, session_messages, session_model, message_model = await self._prepare_session(
-            session_id, project.project_id, use_window, use_summary, window_k
-        )
+        # Session initialization
+        session_obj = None
+        session_messages = []
+        session_model = None
+        message_model = None
 
+        if session_id:
+            from models.SessionModel import SessionModel
+            from models.MessageModel import MessageModel
+            session_model = await SessionModel.create_instance(self.db_client)
+            message_model = await MessageModel.create_instance(self.db_client)
+            if use_window:
+                session_obj = await session_model.get_session_or_create_one(session_id, project.id)
+                session_messages = await message_model.get_messages_by_session(session_id, limit=window_k)
+
+        # Query condensation
         search_query = query
         if session_messages:
             search_query = await self._condense_query(query, session_messages)
 
-        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
+        # Embed
+        cache_vec = await asyncio.to_thread(
+            self.embedding_client.embed_text,
+            text=search_query,
+            document_type=DocumentTypeEnum.QUERY.value,
+        )
         if not cache_vec:
             yield "[Error: embedding failed]"
             return
 
-        cached_answer = await self._check_semantic_cache(project.project_id, cache_vec, use_cache, cache_threshold)
-        if cached_answer:
-            yield cached_answer
-            return
-
-        entities_text = ""
-        if session_id and use_entity:
+        # Cache check
+        if use_cache:
+            self._init_cache_collection(project.project_id)
+            cache_col_name = self._get_cache_collection_name(project.project_id)
             try:
-                ent_col = self._get_entity_collection_name(project.project_id)
-                self._init_entity_collection(project.project_id)
-                ent_docs = await asyncio.to_thread(
-                    self.vectordb_client.search_by_vector, collection_name=ent_col, vector=cache_vec, limit=3, score_threshold=0.6
+                cached_results = await asyncio.to_thread(
+                    self.vectordb_client.search_by_vector,
+                    collection_name=cache_col_name,
+                    vector=cache_vec,
+                    limit=1,
+                    score_threshold=cache_threshold,
                 )
-                if ent_docs:
-                    entities_text = "\n".join([d.payload.get("text", "") for d in ent_docs])
+                if cached_results:
+                    cached_answer = cached_results[0].payload.get("metadata", {}).get("answer")
+                    if cached_answer:
+                        yield cached_answer
+                        return
             except Exception:
                 pass
 
-        retrieved_documents, _ = await self._retrieve_and_rerank_context(
-            project, search_query, limit, use_hybrid, score_threshold, metadata_filter, use_vector, use_rerank=True
+        # Retrieval
+        results = await asyncio.to_thread(
+            self.search_vector_db_collection,
+            project=project,
+            text=search_query,
+            limit=limit,
+            use_hybrid=use_hybrid,
+            score_threshold=score_threshold,
         )
-        
-        if not retrieved_documents and use_vector:
+        if not results:
             yield "No relevant documents found for your query."
             return
 
-        full_prompt, chat_history_prompts = self._format_system_prompt(
-            query, session_obj, session_messages, entities_text, retrieved_documents, use_summary, use_entity, use_window
+        # Build prompt (reuse existing helper pattern inline)
+        system_prompt = self.template_parser.get("rag", "system_prompt")
+        docs_prompt = ""
+        for i, r in enumerate(results[:limit]):
+            chunk_text = r.payload.get("text", "")
+            docs_prompt += f"\n[Doc {i+1}]: {chunk_text}"
+
+        chat_history_prompts = []
+        if session_messages:
+            for msg in session_messages[-window_k:]:
+                role_val = msg.role if hasattr(msg, "role") else "user"
+                try:
+                    if role_val == "human":
+                        chat_history_prompts.append(
+                            self.generation_client.construct_prompt(
+                                prompt=msg.content, role=self.generation_client.enums.USER.value
+                            )
+                        )
+                    else:
+                        chat_history_prompts.append(
+                            self.generation_client.construct_prompt(
+                                prompt=msg.content, role=self.generation_client.enums.ASSISTANT.value
+                            )
+                        )
+                except Exception:
+                    pass
+
+        full_prompt = self.template_parser.get("rag", "user_prompt").format(
+            document_context=docs_prompt, query=query
         )
 
-        system_prompt = self.template_parser.get("rag", "system_prompt")
-        if chat_history_prompts and chat_history_prompts[0].get("role") == self.generation_client.enums.SYSTEM.value:
-            system_prompt = chat_history_prompts[0].get("content", system_prompt)
-
+        # Stream or fallback
         collected = []
         if hasattr(self.generation_client, "stream_text"):
             try:
                 for token in self.generation_client.stream_text(
-                    prompt=full_prompt, chat_history=chat_history_prompts, system_prompt=system_prompt
+                    prompt=full_prompt,
+                    chat_history=chat_history_prompts,
+                    system_prompt=system_prompt,
                 ):
                     collected.append(token)
                     yield token
@@ -680,9 +749,12 @@ class NLPController(BaseController):
                 yield f"[Error during streaming: {exc}]"
                 return
         else:
+            # Provider doesn't support streaming — generate full answer and emit once
             try:
                 full_answer = self.generation_client.generate_text(
-                    prompt=full_prompt, chat_history=chat_history_prompts, system_prompt=system_prompt
+                    prompt=full_prompt,
+                    chat_history=chat_history_prompts,
+                    system_prompt=system_prompt,
                 )
                 if full_answer:
                     yield full_answer
@@ -691,12 +763,19 @@ class NLPController(BaseController):
                 yield f"[Error: {exc}]"
                 return
 
+        # Post-generation: save to session (fire-and-forget)
         if session_id and session_model and message_model and collected:
             full_text = "".join(collected)
             try:
-                from models.db_schemes.chat_message import ChatMessage
-                await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
-                await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=full_text))
-                await session_model.increment_message_count(session_id, 2)
+                await message_model.add_message_to_session(
+                    session_id=session_id,
+                    role="human",
+                    content=query,
+                )
+                await message_model.add_message_to_session(
+                    session_id=session_id,
+                    role="ai",
+                    content=full_text,
+                )
             except Exception as exc:
-                logger.error("Failed to save streamed message to session: %s", exc)
+                logger.warning("Stream: failed to save session messages: %s", exc)

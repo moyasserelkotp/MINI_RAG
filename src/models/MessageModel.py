@@ -43,3 +43,24 @@ class MessageModel(BaseDataModel):
         # Return chronologically (oldest to newest among the limit)
         messages.reverse()
         return messages
+
+    # Phase 6: Session management methods
+    async def delete_messages_by_session(self, session_id: str) -> int:
+        """Delete all messages belonging to a session. Returns deleted count."""
+        result = await self.collection.delete_many({"session_id": session_id})
+        return result.deleted_count
+
+    async def add_message_to_session(self, session_id: str, role: str, content: str):
+        """Convenience method: create and save a single message."""
+        from datetime import datetime
+        message = ChatMessage(
+            session_id=session_id,
+            role=role,
+            content=content,
+            created_at=datetime.utcnow(),
+        )
+        return await self.create_message(message=message)
+
+    async def get_message_count(self, session_id: str) -> int:
+        """Return the total number of messages in a session."""
+        return await self.collection.count_documents({"session_id": session_id})

@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     # Application Settings 
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+
+    # Authentication
+    ENABLE_AUTH: bool = False              # Set True in production to require X-API-Key
+    API_KEYS: Union[List[str], str] = []   # Comma-separated valid API keys
+
+    # Rate Limiting
+    RATE_LIMIT_ANSWER: str = "10/minute"   # Limit for /answer endpoints
+    RATE_LIMIT_UPLOAD: str = "20/minute"   # Limit for /upload endpoints
+    RATE_LIMIT_GLOBAL: str = "100/minute"  # Global limit per IP
     FILE_ALLOWED_TYPES: Union[List[str], str] = []
     FILE_MAX_SIZE: int = 0          # bytes (already in bytes, no extra scaling)
     FILE_DEFAULT_CHUNK_SIZE: int = 512_000  # streaming read chunk (bytes)
@@ -38,6 +47,14 @@ class Settings(BaseSettings):
             return [item.strip().lower() for item in value.split(",") if item.strip()]
         if isinstance(v, list):
             return [item.strip().lower() for item in v if isinstance(item, str)]
+        return v
+
+    @validator("API_KEYS", pre=True)
+    def _split_api_keys(cls, v):
+        if isinstance(v, str):
+            return [k.strip() for k in v.split(",") if k.strip()]
+        if isinstance(v, list):
+            return [k.strip() for k in v if isinstance(k, str)]
         return v
 
     # MongoDB 

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, status, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from routes.schemes.nlp import PushRequest, SearchRequest
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
@@ -7,6 +7,7 @@ from controllers.NLPController import NLPController
 from models import ResponseSignal
 
 import logging
+import json
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -90,7 +91,7 @@ async def index_project(request: Request, project_id: str, push_request: PushReq
     )
 
 
-# ── Index info ────────────────────────────────────────────────────────────────
+#  Index info 
 
 @nlp_router.get("/index/info/{project_id}")
 async def get_project_index_info(request: Request, project_id: str):
@@ -140,12 +141,21 @@ async def search_index(request: Request, project_id: str, search_request: Search
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     nlp_controller = _make_nlp_controller(request)
+
+    # Phase 5: Build metadata filter from request fields
+    metadata_filter = {}
+    if search_request.filter_source:
+        metadata_filter["source"] = search_request.filter_source
+    if search_request.filter_metadata:
+        metadata_filter.update(search_request.filter_metadata)
+
     results = nlp_controller.search_vector_db_collection(
         project=project,
         text=search_request.text,
         limit=search_request.limit,
         use_hybrid=search_request.use_hybrid,
         score_threshold=search_request.score_threshold,
+        metadata_filter=metadata_filter or None,
     )
 
 
@@ -182,6 +192,14 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
     project = await project_model.get_project_or_create_one(project_id=project_id)
 
     nlp_controller = _make_nlp_controller(request)
+
+    # Phase 5: Build metadata filter from request fields
+    metadata_filter = {}
+    if search_request.filter_source:
+        metadata_filter["source"] = search_request.filter_source
+    if search_request.filter_metadata:
+        metadata_filter.update(search_request.filter_metadata)
+
     answer, full_prompt, chat_history, sources, cached = await nlp_controller.answer_rag_question(
         project=project,
         query=search_request.text,
@@ -189,6 +207,7 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
         use_hybrid=search_request.use_hybrid,
         score_threshold=search_request.score_threshold,
         session_id=search_request.session_id,
+        metadata_filter=metadata_filter or None,
     )
 
     if answer is False:
@@ -242,4 +261,68 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
             "full_prompt": full_prompt,
             "chat_history": chat_history,
         }
+    )
+
+
+# ── Streaming Answer (SSE) ───────────────────────────────────────────────────
+
+@nlp_router.post("/index/answer/stream/{project_id}", summary="Stream RAG answer via SSE")
+async def answer_rag_stream(request: Request, project_id: str, search_request: SearchRequest):
+    """Stream the RAG answer token-by-token using Server-Sent Events (SSE).
+
+    Each event is:  data: {"token": "<text>"}\n\n
+    Final event is: data: {"done": true, "sources": [...], "cached": false}\n\n
+
+    JavaScript client example:
+        const es = new EventSource('/api/v1/nlp/index/answer/stream/my_project');
+        es.onmessage = e => { const d = JSON.parse(e.data); process(d.token); };
+    """
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    project = await project_model.get_project_or_create_one(project_id=project_id)
+    nlp_controller = _make_nlp_controller(request)
+
+    async def event_stream():
+        full_answer = []
+        try:
+            # Check if the provider supports streaming
+            gen_client = request.app.generation_client
+            if not hasattr(gen_client, "stream_text"):
+                # Fallback: run full answer and emit in one shot
+                answer, _, _, sources, cached = await nlp_controller.answer_rag_question(
+                    project=project,
+                    query=search_request.text,
+                    limit=search_request.limit,
+                    use_hybrid=search_request.use_hybrid,
+                    score_threshold=search_request.score_threshold,
+                    session_id=search_request.session_id,
+                )
+                if answer:
+                    yield f"data: {json.dumps({'token': answer})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'sources': sources, 'cached': cached})}\n\n"
+                return
+
+            async for token in nlp_controller.answer_rag_stream(
+                project=project,
+                query=search_request.text,
+                limit=search_request.limit,
+                use_hybrid=search_request.use_hybrid,
+                score_threshold=search_request.score_threshold,
+                session_id=search_request.session_id,
+            ):
+                full_answer.append(token)
+                yield f"data: {json.dumps({'token': token})}\n\n"
+
+        except Exception as e:
+            logger.error("Streaming RAG error: %s", e)
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # Disable Nginx buffering for SSE
+        },
     )

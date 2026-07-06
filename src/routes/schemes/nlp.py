@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class PushRequest(BaseModel):
@@ -17,4 +17,13 @@ class SearchRequest(BaseModel):
     session_id: Optional[str] = Field(
         None, max_length=128,
         description="Optional Session ID for chat memory (max 128 chars)"
+    )
+    # Phase 5: Metadata filtering
+    filter_source: Optional[str] = Field(
+        None, max_length=256,
+        description="Only search chunks from this filename (e.g. 'policy_2024.pdf')"
+    )
+    filter_metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Key-value pairs to filter chunks by metadata (e.g. {'department': 'HR'})"
     )
