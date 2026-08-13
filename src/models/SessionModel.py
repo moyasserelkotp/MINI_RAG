@@ -36,7 +36,7 @@ class SessionModel(BaseDataModel):
         session.id = result.inserted_id
         return session
 
-    async def get_session_or_create_one(self, session_id: str, project_id: ObjectId):
+    async def get_session_or_create_one(self, session_id: str, project_id: str):
         record = await self.collection.find_one({"session_id": session_id})
         if record is None:
             session = ChatSession(session_id=session_id, project_id=project_id)

@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y \
 COPY src/requirements.txt .
 
 ENV UV_HTTP_TIMEOUT=120
+ENV UV_COMPILE_BYTECODE=1
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install -r requirements.txt --system
 
+# Copy frontend source AFTER deps — so app.py edits don't bust the pip cache
 COPY frontend/ /app/frontend/
 
 # Expose default Streamlit port

@@ -19,12 +19,13 @@ RUN apt-get update && apt-get install -y \
 # Python dependencies 
 COPY src/requirements.txt .
 ENV UV_HTTP_TIMEOUT=120
+ENV UV_COMPILE_BYTECODE=1
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install -r requirements.txt --system
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install flower==2.0.1 --system
 
-# Application source 
+# Application source — copy AFTER deps so src/ edits don't bust the pip cache
 COPY src/ .
 
 # Entrypoint 

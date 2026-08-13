@@ -11,6 +11,7 @@ services:
       - "8000:8000"
     volumes:
       - fastapi_data:/app/assets
+      - ../src:/app           # live reload: code changes apply without rebuild
     networks:
       - backend
     restart: always
@@ -60,6 +61,7 @@ services:
       --max-tasks-per-child=50
     volumes:
       - fastapi_data:/app/assets
+      - ../src:/app           # live reload
     networks:
       - backend
     restart: always
@@ -91,6 +93,7 @@ services:
       --max-tasks-per-child=20
     volumes:
       - fastapi_data:/app/assets
+      - ../src:/app           # live reload
     networks:
       - backend
     restart: always
@@ -195,11 +198,11 @@ services:
       - backend
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/6333' || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 10
+      start_period: 30s
 
   # RabbitMQ (Message Broker)
   rabbitmq:

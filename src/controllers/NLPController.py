@@ -206,7 +206,6 @@ class NLPController(BaseController):
                     vector=vector,
                     limit=limit,
                     semantic_weight=semantic_weight,
-                    filter_conditions=metadata_filter,   # Phase 5
                 )
             else:
                 results = self.vectordb_client.search_by_vector(
@@ -214,7 +213,6 @@ class NLPController(BaseController):
                     vector=vector,
                     limit=limit,
                     score_threshold=threshold if threshold > 0 else None,
-                    filter_conditions=metadata_filter,   # Phase 5
                 )
             duration = time.monotonic() - start
             # Record retrieval latency and chunks retrieved

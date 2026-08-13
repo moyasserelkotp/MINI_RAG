@@ -70,7 +70,7 @@ async def get_session_messages(request: Request, project_id: str, session_id: st
         "messages": [
             {
                 "role": getattr(m, "role", "unknown"),
-                "content": getattr(m, "content", ""),
+                "content": getattr(m, "text", ""),
                 "created_at": m.created_at.isoformat() if getattr(m, "created_at", None) else None,
             }
             for m in messages
