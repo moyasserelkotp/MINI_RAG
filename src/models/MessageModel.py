@@ -3,11 +3,10 @@ from .db_schemes import ChatMessage
 from .enums.DataBaseEnum import DataBaseEnum
 
 
-_INITIALIZED: bool = False
+
 
 
 class MessageModel(BaseDataModel):
-
     def __init__(self, db_client: object):
         super().__init__(db_client=db_client)
         self.collection = self.db_client[DataBaseEnum.COLLECTION_CHAT_MESSAGE_NAME.value]
@@ -19,14 +18,12 @@ class MessageModel(BaseDataModel):
         return instance
 
     async def init_collection(self):
-        global _INITIALIZED
-        if _INITIALIZED:
-            return  # FIX: skip DB round-trip after first successful init
-        all_collections = await self.db_client.list_collection_names()
-        if DataBaseEnum.COLLECTION_CHAT_MESSAGE_NAME.value not in all_collections:
-            self.collection = self.db_client[DataBaseEnum.COLLECTION_CHAT_MESSAGE_NAME.value]
-            await self.collection.create_index("session_id", name="session_id_idx")
-        _INITIALIZED = True
+        self.collection = self.db_client[DataBaseEnum.COLLECTION_CHAT_MESSAGE_NAME.value]
+        indexes = ChatMessage.get_indexes()
+        for index in indexes:
+            await self.collection.create_index(
+                index["key"], name=index["name"], unique=index["unique"], background=True
+            )
 
     async def create_message(self, message: ChatMessage):
         result = await self.collection.insert_one(
@@ -35,8 +32,8 @@ class MessageModel(BaseDataModel):
         message.id = result.inserted_id
         return message
 
-    async def get_messages_by_session(self, session_id: str, limit: int = 5):
-        cursor = self.collection.find({"session_id": session_id}).sort("created_at", -1).limit(limit)
+    async def get_messages_by_session(self, session_id: str, skip: int = 0, limit: int = 5):
+        cursor = self.collection.find({"session_id": session_id}).sort("created_at", -1).skip(skip).limit(limit)
         messages = []
         async for document in cursor:
             messages.append(ChatMessage(**document))
@@ -52,12 +49,12 @@ class MessageModel(BaseDataModel):
 
     async def add_message_to_session(self, session_id: str, role: str, content: str):
         """Convenience method: create and save a single message."""
-        from datetime import datetime
+        from datetime import datetime, timezone
         message = ChatMessage(
             session_id=session_id,
             role=role,
-            content=content,
-            created_at=datetime.utcnow(),
+            text=content,
+            created_at=datetime.now(timezone.utc),
         )
         return await self.create_message(message=message)
 

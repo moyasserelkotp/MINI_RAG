@@ -88,11 +88,15 @@ class ProcessController(BaseController):
                 from langchain_community.embeddings import HuggingFaceEmbeddings
                 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
             else:
-                # Wrap existing embedding_client so it conforms to Langchain Embeddings if needed.
-                # Assuming the environment uses HuggingFace local or we have an adapter.
-                # Here we just fallback to HuggingFace
-                from langchain_community.embeddings import HuggingFaceEmbeddings
-                embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+                from langchain_core.embeddings import Embeddings
+                class AdapterEmbeddings(Embeddings):
+                    def __init__(self, client):
+                        self.client = client
+                    def embed_documents(self, texts):
+                        return [self.client.embed_text(t, document_type="document") for t in texts]
+                    def embed_query(self, text):
+                        return self.client.embed_text(text, document_type="query")
+                embeddings = AdapterEmbeddings(self.embedding_client)
             text_splitter = SemanticChunker(embeddings)
 
         elif chunk_strategy == "document_structure":
@@ -122,11 +126,15 @@ class ProcessController(BaseController):
             file_content_texts = [rec.page_content for rec in file_content]
             file_content_metadata = [rec.metadata for rec in file_content]
             chunks = []
+            from langchain_core.documents import Document
             for text, meta in zip(file_content_texts, file_content_metadata):
                 splits = text_splitter.split_text(text)
                 for split in splits:
-                    split.metadata.update(meta)
-                chunks.extend(splits)
+                    if isinstance(split, str):
+                        chunks.append(Document(page_content=split, metadata=meta))
+                    else:
+                        split.metadata.update(meta)
+                        chunks.append(split)
             return chunks
         
         file_content_texts = [

@@ -1,9 +1,20 @@
-from __future__ import annotations
+"""
+routes/tasks.py
+===============
+REST API for submitting background Celery jobs and polling their status.
 
+Endpoints
+---------
+  POST /api/v1/tasks/process-file/{project_id}   – async document chunking (single file)
+  POST /api/v1/tasks/process-all/{project_id}    – async document chunking (all files)
+  POST /api/v1/tasks/index/{project_id}          – async vector-DB indexing
+  GET  /api/v1/tasks/{task_id}                   – poll task status + result
+  DELETE /api/v1/tasks/{task_id}                 – revoke / cancel a pending task
+"""
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, status, Request
+from fastapi import APIRouter, status, Request, Path
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -13,10 +24,13 @@ from celery_app.tasks.processing import process_project_files
 from celery_app.tasks.indexing import index_project_into_vectordb
 
 logger = logging.getLogger(__name__)
+from middleware.rate_limiter import limiter
+
+_PROJECT_ID = Path(..., pattern=r"^[a-zA-Z0-9_-]{1,64}$")
 
 tasks_router = APIRouter(
     prefix="/api/v1/tasks",
-    tags=["api_v1/tasks"],
+    tags=["Background Tasks"],
 )
 
 
@@ -93,10 +107,11 @@ def _build_state(result: AsyncResult) -> dict:
     summary="Submit async document chunking (single file)",
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("60/minute")
 async def submit_process_file(
     request: Request,
-    project_id: str,
     body: ProcessTaskRequest,
+    project_id: str = _PROJECT_ID,
 ):
     """
     Enqueue a background job to chunk **one** uploaded file.
@@ -133,10 +148,11 @@ async def submit_process_file(
     summary="Submit async document chunking (all files)",
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("5/minute")
 async def submit_process_all(
     request: Request,
-    project_id: str,
     body: ProcessTaskRequest,
+    project_id: str = _PROJECT_ID,
 ):
     """
     Enqueue a background job to chunk **all** uploaded files for a project.
@@ -164,10 +180,11 @@ async def submit_process_all(
     summary="Submit async vector-DB indexing",
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("5/minute")
 async def submit_index(
     request: Request,
-    project_id: str,
     body: IndexTaskRequest,
+    project_id: str = _PROJECT_ID,
 ):
     """
     Enqueue a background job to embed stored chunks and push them to the
@@ -192,7 +209,8 @@ async def submit_index(
     "/{task_id}",
     summary="Get task status and result",
 )
-async def get_task_status(task_id: str):
+@limiter.limit("120/minute")
+async def get_task_status(request: Request, task_id: str):
     """
     Poll the status of any background task.
 
@@ -216,7 +234,8 @@ async def get_task_status(task_id: str):
     "/{task_id}",
     summary="Revoke / cancel a pending or running task",
 )
-async def revoke_task(task_id: str, terminate: bool = False):
+@limiter.limit("60/minute")
+async def revoke_task(request: Request, task_id: str, terminate: bool = False):
     """
     Cancel a queued task.
 
@@ -225,7 +244,10 @@ async def revoke_task(task_id: str, terminate: bool = False):
     - ``terminate=true``: send SIGTERM to the worker process handling the task
         (use with care — may leave DB in an inconsistent state).
     """
-    celery_app.control.revoke(task_id, terminate=terminate, signal="SIGTERM")
+    if terminate:
+        celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+    else:
+        celery_app.control.revoke(task_id, terminate=False)
     logger.info("Revoked task %s (terminate=%s)", task_id, terminate)
     return JSONResponse(
         content={
@@ -236,16 +258,3 @@ async def revoke_task(task_id: str, terminate: bool = False):
     )
 
 
-"""
-routes/tasks.py
-===============
-REST API for submitting background Celery jobs and polling their status.
-
-Endpoints
----------
-  POST /api/v1/tasks/process-file/{project_id}   – async document chunking (single file)
-  POST /api/v1/tasks/process-all/{project_id}    – async document chunking (all files)
-  POST /api/v1/tasks/index/{project_id}          – async vector-DB indexing
-  GET  /api/v1/tasks/{task_id}                   – poll task status + result
-  DELETE /api/v1/tasks/{task_id}                 – revoke / cancel a pending task
-"""

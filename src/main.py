@@ -16,9 +16,10 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
 from starlette.middleware.base import BaseHTTPMiddleware
 from middleware.auth import api_key_middleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from middleware.request_id import RequestIDMiddleware
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from middleware.rate_limiter import limiter
 
 import logging
 
@@ -110,6 +111,37 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete.")
 
 
+openapi_tags = [
+    {
+        "name": "General",
+        "description": "Base routes and health checks.",
+    },
+    {
+        "name": "Projects",
+        "description": "Manage user projects.",
+    },
+    {
+        "name": "Data Management",
+        "description": "Upload and manage project data.",
+    },
+    {
+        "name": "Search & NLP",
+        "description": "Query vectors and generate answers.",
+    },
+    {
+        "name": "Background Tasks",
+        "description": "Trigger and monitor long-running background tasks.",
+    },
+    {
+        "name": "Sessions",
+        "description": "Manage chat sessions and message history.",
+    },
+    {
+        "name": "Evaluation",
+        "description": "RAG evaluation endpoints.",
+    },
+]
+
 app = FastAPI(
     title="MINI-RAG",
     description=(
@@ -129,6 +161,12 @@ app = FastAPI(
     },
     lifespan=lifespan,
     debug=settings.DEBUG,
+    openapi_tags=openapi_tags,
+    swagger_ui_parameters={"operationsSorter": "method"},
+    # Disable interactive docs in production; enable only when DEBUG=True.
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
 # Store settings in app state for access in routes
@@ -136,10 +174,6 @@ app.state.DEBUG = settings.DEBUG
 app.state.LOG_LEVEL = settings.LOG_LEVEL
 
 #  Rate Limiter 
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[settings.RATE_LIMIT_GLOBAL],
-)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logger.info("Rate limiter initialised (global=%s)", settings.RATE_LIMIT_GLOBAL)
@@ -163,7 +197,10 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=api_key_middleware)
 if settings.ENABLE_AUTH:
     logger.info("API key auth ENABLED (%d key(s) configured)", len(settings.API_KEYS))
 else:
-    logger.warning("API key auth DISABLED — set ENABLE_AUTH=True in production")
+    logger.warning("⚠️  AUTHENTICATION IS DISABLED — set ENABLE_AUTH=True in production")
+
+# Request-ID middleware — attaches X-Request-ID to every request/response
+app.add_middleware(RequestIDMiddleware)
 
 # CORS — origins controlled via CORS_ALLOWED_ORIGINS in settings / .env
 app.add_middleware(

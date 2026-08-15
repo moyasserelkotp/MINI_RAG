@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, validator
 from typing import Optional
 from bson.objectid import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Asset(BaseModel):
@@ -10,8 +10,8 @@ class Asset(BaseModel):
     asset_type: str = Field(..., min_length=1)
     asset_name: str = Field(..., min_length=1)
     asset_size: int = Field(ge=0, default=None)
-    asset_config: dict = Field(default=None)
-    asset_pushed_at: datetime = Field(default_factory=datetime.utcnow)
+    asset_config: Optional[dict] = Field(default=None)
+    asset_pushed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:
         arbitrary_types_allowed = True

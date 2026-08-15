@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from bson.objectid import ObjectId
 
 class ChatSession(BaseModel):
@@ -9,11 +9,26 @@ class ChatSession(BaseModel):
     project_id: str = Field(..., description="The ID of the project this session belongs to")
     summary: Optional[str] = Field(None, description="Rolling summary of the conversation")
     message_count: int = Field(0, description="Number of messages in the session so far")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:
         arbitrary_types_allowed = True
         json_encoders = {
             ObjectId: str
         }
+
+    @classmethod
+    def get_indexes(cls):
+        return [
+            {
+                "key": [("session_id", 1)],
+                "name": "session_id_idx",
+                "unique": True,
+            },
+            {
+                "key": [("project_id", 1)],
+                "name": "project_id_idx",
+                "unique": False,
+            }
+        ]

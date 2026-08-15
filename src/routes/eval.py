@@ -3,17 +3,19 @@
 Simple pass-through to existing RAG evaluator utility functions,
 exposed via REST API.
 """
-from fastapi import APIRouter, Request, status, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Request, status, Depends, HTTPException
 from pydantic import BaseModel, Field
+from .schemes.nlp import EvaluationResponse
 
 import logging
+import asyncio
 
 logger = logging.getLogger("uvicorn.error")
+from middleware.rate_limiter import limiter
 
 eval_router = APIRouter(
     prefix="/api/v1/nlp",
-    tags=["api_v1/eval"],
+    tags=["Evaluation"],
 )
 
 
@@ -23,7 +25,8 @@ class EvaluateRequest(BaseModel):
     contexts: list[str] = Field(..., description="The retrieved context chunks used to generate the answer.")
 
 
-@eval_router.post("/eval/faithfulness", summary="Evaluate if answer is faithful to retrieved contexts")
+@eval_router.post("/eval/faithfulness", summary="Evaluate if answer is faithful to retrieved contexts", response_model=EvaluationResponse)
+@limiter.limit("60/minute")
 async def eval_faithfulness(request: Request, eval_req: EvaluateRequest):
     """
     Check if the answer is completely supported by the provided context chunks.
@@ -32,9 +35,9 @@ async def eval_faithfulness(request: Request, eval_req: EvaluateRequest):
     gen_client = request.app.generation_client
 
     if not hasattr(gen_client, "generate_text"):
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"signal": "EVAL_UNSUPPORTED", "error": "LLM client not configured"}
+            detail={"signal": "EVAL_UNSUPPORTED", "error": "LLM client not configured"}
         )
 
     # Note: In a production app you'd import the actual Evaluator class
@@ -57,10 +60,11 @@ Line 2: A brief 1-2 sentence explanation for the score.
 """
     
     try:
-        eval_result = gen_client.generate_text(prompt=prompt)
+        eval_result = await asyncio.to_thread(gen_client.generate_text, prompt=prompt)
         lines = eval_result.strip().split('\n')
         score = 0.0
         reasoning = eval_result
+        parse_error = False
         if len(lines) >= 1:
             try:
                 # Extract first float found in line 1
@@ -68,26 +72,32 @@ Line 2: A brief 1-2 sentence explanation for the score.
                 match = re.search(r"([0-9]*\.[0-9]+|[0-9]+)", lines[0])
                 if match:
                     score = float(match.group(1))
+                else:
+                    parse_error = True
             except Exception:
-                pass
+                parse_error = True
+        else:
+            parse_error = True
         if len(lines) >= 2:
             reasoning = " ".join(lines[1:])
             
-        return JSONResponse(content={
-            "signal": "EVAL_SUCCESS",
-            "metric": "faithfulness",
-            "score": score,
-            "reasoning": reasoning.strip()
-        })
+        return EvaluationResponse(
+            signal="EVAL_SUCCESS",
+            metric="faithfulness",
+            score=score,
+            reasoning=reasoning.strip(),
+            parse_error=parse_error
+        )
     except Exception as e:
         logger.error(f"Faithfulness eval failed: {e}")
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"signal": "EVAL_FAILED", "error": str(e)}
+            detail={"signal": "EVAL_FAILED", "error": str(e)}
         )
 
 
-@eval_router.post("/eval/relevance", summary="Evaluate relevance of answer to query")
+@eval_router.post("/eval/relevance", summary="Evaluate relevance of answer to query", response_model=EvaluationResponse)
+@limiter.limit("60/minute")
 async def eval_relevance(request: Request, eval_req: EvaluateRequest):
     """
     Check if the answer directly addresses the user's query.
@@ -96,9 +106,9 @@ async def eval_relevance(request: Request, eval_req: EvaluateRequest):
     gen_client = request.app.generation_client
 
     if not hasattr(gen_client, "generate_text"):
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"signal": "EVAL_UNSUPPORTED", "error": "LLM client not configured"}
+            detail={"signal": "EVAL_UNSUPPORTED", "error": "LLM client not configured"}
         )
 
     prompt = f"""You are an impartial evaluator assessing the relevance of an AI assistant's answer to a user's question.
@@ -114,30 +124,36 @@ Line 2: A brief 1-2 sentence explanation for the score.
 """
     
     try:
-        eval_result = gen_client.generate_text(prompt=prompt)
+        eval_result = await asyncio.to_thread(gen_client.generate_text, prompt=prompt)
         lines = eval_result.strip().split('\n')
         score = 0.0
         reasoning = eval_result
+        parse_error = False
         if len(lines) >= 1:
             try:
                 import re
                 match = re.search(r"([0-9]*\.[0-9]+|[0-9]+)", lines[0])
                 if match:
                     score = float(match.group(1))
+                else:
+                    parse_error = True
             except Exception:
-                pass
+                parse_error = True
+        else:
+            parse_error = True
         if len(lines) >= 2:
             reasoning = " ".join(lines[1:])
             
-        return JSONResponse(content={
-            "signal": "EVAL_SUCCESS",
-            "metric": "relevance",
-            "score": score,
-            "reasoning": reasoning.strip()
-        })
+        return EvaluationResponse(
+            signal="EVAL_SUCCESS",
+            metric="relevance",
+            score=score,
+            reasoning=reasoning.strip(),
+            parse_error=parse_error
+        )
     except Exception as e:
         logger.error(f"Relevance eval failed: {e}")
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"signal": "EVAL_FAILED", "error": str(e)}
+            detail={"signal": "EVAL_FAILED", "error": str(e)}
         )

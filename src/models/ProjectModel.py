@@ -16,14 +16,12 @@ class ProjectModel(BaseDataModel):
         return instance
 
     async def init_collection(self):
-        all_collections = await self.db_client.list_collection_names()
-        if DataBaseEnum.COLLECTION_PROJECT_NAME.value not in all_collections:
-            self.collection = self.db_client[DataBaseEnum.COLLECTION_PROJECT_NAME.value]
-            indexes = Project.get_indexes()
-            for index in indexes:
-                await self.collection.create_index(
-                    index["key"], name=index["name"], unique=index["unique"]
-                )
+        self.collection = self.db_client[DataBaseEnum.COLLECTION_PROJECT_NAME.value]
+        indexes = Project.get_indexes()
+        for index in indexes:
+            await self.collection.create_index(
+                index["key"], name=index["name"], unique=index["unique"], background=True
+            )
 
     async def create_project(self, project: Project):
         result = await self.collection.insert_one(
@@ -42,7 +40,7 @@ class ProjectModel(BaseDataModel):
 
     async def get_all_projects(self, page: int = 1, page_size: int = 10):
         total_documents = await self.collection.count_documents({})
-        total_pages = (total_documents + page_size - 1) // page_size
+        total_pages = max(1, (total_documents + page_size - 1) // page_size)
 
         cursor = self.collection.find().skip((page - 1) * page_size).limit(page_size)
         projects = []
@@ -50,6 +48,19 @@ class ProjectModel(BaseDataModel):
             projects.append(Project(**document))
 
         return projects, total_pages
+
+    async def get_project_by_id(self, project_id: str):
+        """Fetch a project by its project_id string. Returns None if not found.
+
+        Use this for every READ or DELETE operation.  Never auto-creates a project.
+        """
+        record = await self.collection.find_one({"project_id": project_id})
+        if record is None:
+            return None
+        return Project(**record)
+
+    # Convenience alias used in routes for clarity.
+    get_project_or_404 = get_project_by_id
 
     async def delete_project(self, project_id: str) -> bool:
         result = await self.collection.delete_one({"project_id": project_id})

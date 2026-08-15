@@ -1,7 +1,7 @@
 from typing import List, Optional, Union
 import json
 from functools import lru_cache
-
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import validator
 
@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
     # Authentication
-    ENABLE_AUTH: bool = False              # Set True in production to require X-API-Key
+    # Default: True — authentication is REQUIRED in production.
+    # To disable during local development, set ENABLE_AUTH=false in your .env
+    ENABLE_AUTH: bool = True
     API_KEYS: Union[List[str], str] = []   # Comma-separated valid API keys
 
     # Rate Limiting
@@ -30,7 +32,7 @@ class Settings(BaseSettings):
     FILE_PROCESS_OVERLAP_SIZE: int = 50
     CHUNK_STRATEGY: str = "recursive"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=str(Path(__file__).parent.parent / ".env"), env_file_encoding="utf-8")
 
     @validator("FILE_ALLOWED_TYPES", pre=True)
     def _split_allowed_types(cls, v):
@@ -146,7 +148,7 @@ class Settings(BaseSettings):
     # CORS 
     # FIX: restrict allowed origins; wildcard '*' is unsafe in production
     # Set to ["*"] only for local development; list specific domains in prod
-    CORS_ALLOWED_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://localhost:8080"]
+    CORS_ALLOWED_ORIGINS: Union[List[str], str] = []
 
     @validator("CORS_ALLOWED_ORIGINS", pre=True)
     def _split_cors_origins(cls, v):

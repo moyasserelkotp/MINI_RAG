@@ -16,7 +16,6 @@ EXEMPT_PATHS = {
     "/favicon.ico",
 }
 
-
 async def api_key_middleware(request: Request, call_next):
     """Middleware that enforces API key authentication when ENABLE_AUTH=True.
 

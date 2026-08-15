@@ -1,19 +1,25 @@
-from fastapi import APIRouter, status, Request
-from fastapi.responses import JSONResponse, StreamingResponse
-from routes.schemes.nlp import PushRequest, SearchRequest
+from fastapi import APIRouter, status, Request, HTTPException, Path
+from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
+from .schemes.nlp import (
+    SearchRequest, InfoIndexResponse,
+    SearchResponse, AnswerResponse, SearchResultItem
+)
+from .schemes.system import BaseResponse
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from controllers.NLPController import NLPController
 from models import ResponseSignal
-
 import logging
 import json
 
 logger = logging.getLogger("uvicorn.error")
+from middleware.rate_limiter import limiter
+
+_PROJECT_ID = Path(..., pattern=r"^[a-zA-Z0-9_-]{1,64}$")
 
 nlp_router = APIRouter(
     prefix="/api/v1/nlp",
-    tags=["api_v1/nlp"],
+    tags=["Search & NLP"],
 )
 
 
@@ -24,132 +30,103 @@ def _make_nlp_controller(request: Request) -> NLPController:
         generation_client=request.app.generation_client,
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser,
-        # FIX: pass the startup-cached Cohere client (None if rerank is disabled)
         cohere_client=getattr(request.app, "cohere_client", None),
     )
 
 
-# ── Push / Index ─────────────────────────────────────────────────────────────
-
-@nlp_router.post("/index/push/{project_id}")
-async def index_project(request: Request, project_id: str, push_request: PushRequest):
-
-    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
-
-    if not project:
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value},
-        )
-
-    nlp_controller = _make_nlp_controller(request)
-
-    has_records = True
-    page_no = 1
-    inserted_items_count = 0
-    idx = 0
-    # Bug fix: do_reset should only apply to the FIRST page so that the
-    # collection is deleted once (not on every batch, which would wipe data).
-    is_first_page = True
-
-    while has_records:
-        page_chunks = await chunk_model.get_project_chunks(
-            project_id=project.id, page_no=page_no
-        )
-
-        if not page_chunks:
-            has_records = False
-            break
-
-        page_no += 1
-        chunks_ids = list(range(idx, idx + len(page_chunks)))
-        idx += len(page_chunks)
-
-        is_inserted = nlp_controller.index_into_vector_db(
-            project=project,
-            chunks=page_chunks,
-            do_reset=bool(push_request.do_reset) and is_first_page,
-            chunks_ids=chunks_ids,
-        )
-        is_first_page = False
-
-        if not is_inserted:
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={"signal": ResponseSignal.INSERT_INTO_VECTORDB_ERROR.value},
-            )
-
-        inserted_items_count += len(page_chunks)
-
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS.value,
-            "inserted_items_count": inserted_items_count,
-        }
+def _project_not_found(project_id: str):
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value, "project_id": project_id},
     )
 
 
-#  Index info 
 
-@nlp_router.get("/index/info/{project_id}")
-async def get_project_index_info(request: Request, project_id: str):
+
+# ── Index info ────────────────────────────────────────────────────────────────
+@nlp_router.get("/index/info/{project_id}", response_model=InfoIndexResponse)
+@limiter.limit("60/minute")
+async def get_project_index_info(request: Request, project_id: str = _PROJECT_ID):
 
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_by_id(project_id=project_id)
+    if not project:
+        _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
     collection_info = nlp_controller.get_vector_db_collection_info(project=project)
 
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.VECTORDB_COLLECTION_RETRIEVED.value,
-            "collection_info": collection_info,
-        }
+    return InfoIndexResponse(
+        signal=ResponseSignal.VECTORDB_COLLECTION_RETRIEVED.value,
+        collection_info=collection_info,
     )
 
 
-# ── Delete index ─────────────────────────────────────────────────────────────
-
-@nlp_router.delete("/index/delete/{project_id}")
-async def delete_project_index(request: Request, project_id: str):
+# ── Delete index ──────────────────────────────────────────────────────────────
+# Canonical new route: DELETE /api/v1/nlp/documents/{project_id}
+@nlp_router.delete("/documents/{project_id}", response_model=BaseResponse, summary="Delete project vector index")
+@limiter.limit("5/minute")
+async def delete_project_index(request: Request, project_id: str = _PROJECT_ID):
 
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_by_id(project_id=project_id)
+    if not project:
+        _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
     deleted = nlp_controller.reset_vector_db_collection(project=project)
 
     if deleted is False:
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"signal": ResponseSignal.VECTORDB_DELETE_ERROR.value},
+            detail={"signal": ResponseSignal.VECTORDB_DELETE_ERROR.value},
         )
 
-    return JSONResponse(
-        content={"signal": ResponseSignal.VECTORDB_DELETE_SUCCESS.value}
-    )
+    return BaseResponse(signal=ResponseSignal.VECTORDB_DELETE_SUCCESS.value)
+
+
+# Deprecated aliases
+@nlp_router.delete(
+    "/index/{project_id}",
+    response_model=BaseResponse,
+    deprecated=True,
+    summary="[DEPRECATED] Use DELETE /documents/{project_id}",
+    include_in_schema=False,
+)
+@nlp_router.delete(
+    "/index/delete/{project_id}",
+    response_model=BaseResponse,
+    deprecated=True,
+    summary="[DEPRECATED] Use DELETE /documents/{project_id}",
+    include_in_schema=False,
+)
+@limiter.limit("5/minute")
+async def delete_project_index_deprecated(request: Request, project_id: str = _PROJECT_ID):
+    return await delete_project_index(request, project_id)
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
-
-@nlp_router.post("/index/search/{project_id}")
-async def search_index(request: Request, project_id: str, search_request: SearchRequest):
+@nlp_router.post("/retrieve/{project_id}", response_model=SearchResponse)
+@limiter.limit("60/minute")
+async def retrieve_documents(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
 
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_by_id(project_id=project_id)
+
+    if not project:
+        _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
 
-    # Phase 5: Build metadata filter from request fields
     metadata_filter = {}
     if search_request.filter_source:
         metadata_filter["source"] = search_request.filter_source
     if search_request.filter_metadata:
         metadata_filter.update(search_request.filter_metadata)
 
-    results = nlp_controller.search_vector_db_collection(
+    import asyncio
+    results = await asyncio.to_thread(
+        nlp_controller.search_vector_db_collection,
         project=project,
         text=search_request.text,
         limit=search_request.limit,
@@ -158,42 +135,47 @@ async def search_index(request: Request, project_id: str, search_request: Search
         metadata_filter=metadata_filter or None,
     )
 
-
-    # None = embed/search infrastructure failed; [] = no hits above threshold
-    if results is None:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"signal": ResponseSignal.VECTORDB_SEARCH_ERROR.value},
+    if not results:
+        return SearchResponse(
+            signal=ResponseSignal.VECTORDB_SEARCH_ERROR.value,
+            total=0,
+            results=[],
         )
 
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.VECTORDB_SEARCH_SUCCESS.value,
-            "total": len(results),
-            "results": [
-                {
-                    "id": r.id,
-                    "score": round(float(r.score), 6),
-                    "text": r.payload.get("text", ""),
-                    "metadata": r.payload.get("metadata", {}),
-                }
-                for r in results
-            ],
-        }
+    mapped_results = []
+    for r in results:
+        mapped_results.append(
+            SearchResultItem(
+                id=str(getattr(r, "id", "")),
+                score=float(getattr(r, "score", 0.0)),
+                text=r.payload.get("text", "") if hasattr(r, "payload") else "",
+                metadata=r.payload.get("metadata", {}) if hasattr(r, "payload") else {}
+            )
+        )
+
+    return SearchResponse(
+        signal=ResponseSignal.VECTORDB_SEARCH_SUCCESS.value,
+        total=len(mapped_results),
+        results=mapped_results,
     )
 
+@nlp_router.post("/index/search/{project_id}", response_model=SearchResponse, deprecated=True, include_in_schema=False)
+@limiter.limit("60/minute")
+async def search_index_deprecated(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
+    return await retrieve_documents(request, search_request, project_id)
 
-# ── Answer (RAG) ──────────────────────────────────────────────────────────────
-
-@nlp_router.post("/index/answer/{project_id}")
-async def answer_rag(request: Request, project_id: str, search_request: SearchRequest):
+# ── Answer (RAG) — canonical route ───────────────────────────────────────────
+@nlp_router.post("/answer/{project_id}", response_model=AnswerResponse, summary="RAG answer")
+@limiter.limit("60/minute")
+async def answer_rag(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
 
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_by_id(project_id=project_id)
+    if not project:
+        _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
 
-    # Phase 5: Build metadata filter from request fields
     metadata_filter = {}
     if search_request.filter_source:
         metadata_filter["source"] = search_request.filter_source
@@ -211,80 +193,81 @@ async def answer_rag(request: Request, project_id: str, search_request: SearchRe
     )
 
     if answer is False:
-        # Search infra failed completely (e.g. Qdrant is down)
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "Search infrastructure failed"},
+            detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "Search infrastructure failed"},
         )
 
     if answer is None and full_prompt is None and chat_history is None:
-        # No relevant documents found — not a server error
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "signal": ResponseSignal.RAG_ANSWER_SUCCESS.value,
-                "answer": "No relevant documents found for your query. Please try a different question or lower the score threshold.",
-                "sources": [],
-                "cached": False,
-                "session_id": search_request.session_id,
-                "full_prompt": None,
-                "chat_history": None,
-            },
+        return AnswerResponse(
+            signal=ResponseSignal.RAG_ANSWER_SUCCESS.value,
+            answer="No relevant documents found for your query. Please try a different question or lower the score threshold.",
+            sources=[],
+            cached=False,
+            session_id=search_request.session_id,
         )
 
     if answer is None and full_prompt is not None:
-        # Search worked, found docs, BUT the LLM returned None
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "signal": ResponseSignal.RAG_ANSWER_ERROR.value,
-                "error": "LLM generation failed.",
-            },
+            detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "LLM generation failed."},
         )
 
-    if isinstance(answer, str) and ("error:" in answer.lower() or "not initialized" in answer or "was not set" in answer):
-        return JSONResponse(
+    if isinstance(answer, str) and (
+        "error:" in answer.lower() or "not initialized" in answer or "was not set" in answer
+    ):
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "signal": ResponseSignal.RAG_ANSWER_ERROR.value,
-                "error": answer,
-            },
+            detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": answer},
         )
 
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.RAG_ANSWER_SUCCESS.value,
-            "answer": answer,
-            "sources": sources,
-            "cached": cached,
-            "session_id": search_request.session_id,
-            "full_prompt": full_prompt,
-            "chat_history": chat_history,
-        }
+    return AnswerResponse(
+        signal=ResponseSignal.RAG_ANSWER_SUCCESS.value,
+        answer=answer,
+        sources=sources,
+        cached=cached,
+        session_id=search_request.session_id,
     )
 
 
-# ── Streaming Answer (SSE) ───────────────────────────────────────────────────
+# Deprecated alias — kept for backward compatibility.
+@nlp_router.post(
+    "/index/answer/{project_id}",
+    response_model=AnswerResponse,
+    summary="[DEPRECATED] RAG answer — use POST /answer/{project_id}",
+    include_in_schema=False,
+)
+@limiter.limit("60/minute")
+async def answer_rag_deprecated(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
+    """Deprecated: kept for backward compatibility. Use POST /answer/{project_id}."""
+    return await answer_rag(request, search_request, project_id)
 
-@nlp_router.post("/index/answer/stream/{project_id}", summary="Stream RAG answer via SSE")
-async def answer_rag_stream(request: Request, project_id: str, search_request: SearchRequest):
+
+# ── Streaming Answer — canonical route ───────────────────────────────────────
+@nlp_router.post(
+    "/answer/stream/{project_id}",
+    summary="Stream RAG answer via SSE",
+    response_class=StreamingResponse,
+)
+@limiter.limit("60/minute")
+async def answer_rag_stream(
+    request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID
+):
     """Stream the RAG answer token-by-token using Server-Sent Events (SSE).
 
-    Each event is:  data: {"token": "<text>"}\n\n
-    Final event is: data: {"done": true, "sources": [...], "cached": false}\n\n
-
-    JavaScript client example:
-        const es = new EventSource('/api/v1/nlp/index/answer/stream/my_project');
-        es.onmessage = e => { const d = JSON.parse(e.data); process(d.token); };
+    Each event is:  data: {"token": "<text>"}\\n\\n
+    Final event is: data: {"done": true, "sources": [...], "cached": false}\\n\\n
     """
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_by_id(project_id=project_id)
+    if not project:
+        _project_not_found(project_id)
+
     nlp_controller = _make_nlp_controller(request)
 
     async def event_stream():
         full_answer = []
         try:
-            # Check if the provider supports streaming
             gen_client = request.app.generation_client
             if not hasattr(gen_client, "stream_text"):
                 # Fallback: run full answer and emit in one shot
@@ -309,6 +292,9 @@ async def answer_rag_stream(request: Request, project_id: str, search_request: S
                 score_threshold=search_request.score_threshold,
                 session_id=search_request.session_id,
             ):
+                if isinstance(token, dict) and "error" in token:
+                    yield f"data: {json.dumps({'error': token['error']})}\n\n"
+                    return
                 full_answer.append(token)
                 yield f"data: {json.dumps({'token': token})}\n\n"
 
@@ -323,6 +309,21 @@ async def answer_rag_stream(request: Request, project_id: str, search_request: S
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # Disable Nginx buffering for SSE
+            "X-Accel-Buffering": "no",
         },
     )
+
+
+# Deprecated streaming alias
+@nlp_router.post(
+    "/index/answer/stream/{project_id}",
+    summary="[DEPRECATED] Stream RAG answer — use POST /answer/stream/{project_id}",
+    response_class=StreamingResponse,
+    include_in_schema=False,
+)
+@limiter.limit("60/minute")
+async def answer_rag_stream_deprecated(
+    request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID
+):
+    """Deprecated: kept for backward compatibility. Use POST /answer/stream/{project_id}."""
+    return await answer_rag_stream(request, search_request, project_id)

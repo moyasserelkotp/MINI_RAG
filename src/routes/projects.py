@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Request, status, Query
+from fastapi import APIRouter, Request, status, HTTPException, Query, Path
 from fastapi.responses import JSONResponse
+from .schemes.project import ProjectListResponse, ProjectItem, ProjectRequest, ProjectResponse
+from .schemes.system import BaseResponse
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from models.AssetModel import AssetModel
@@ -9,44 +11,65 @@ import logging
 
 logger = logging.getLogger("uvicorn.error")
 
-projects_router = APIRouter(
-    prefix="/api/v1/projects",
-    tags=["api_v1/projects"],
+_PROJECT_ID_PATH = Path(
+    ...,
+    regex=r"^[a-zA-Z0-9_-]{1,64}$",
+    description="Project identifier (alphanumeric, underscores, hyphens, max 64 chars)",
 )
 
+projects_router = APIRouter(
+    prefix="/api/v1/projects",
+    tags=["Projects"],
+)
+@projects_router.post("/", summary="Create a new project", response_model=ProjectResponse)
+async def create_project(request: Request, project_req: ProjectRequest):
+    project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+    
+    project = await project_model.get_project_or_create_one(project_id=project_req.project_id)
+    
+    return ProjectResponse(
+        signal="PROJECT_CREATED",
+        project=ProjectItem(
+            id=str(project.id),
+            project_id=project.project_id
+        )
+    )
 
-@projects_router.get("/", summary="List all projects")
+@projects_router.get("/", summary="List all projects", response_model=ProjectListResponse)
 async def list_projects(
     request: Request,
-    page: int = Query(1, ge=1, description="Page number"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
 ):
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
+
     projects, total_pages = await project_model.get_all_projects(page=page, page_size=page_size)
 
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.LIST_PROJECTS_SUCCESS.value,
-            "page": page,
-            "total_pages": total_pages,
-            "projects": [
-                {"id": str(p.id), "project_id": p.project_id}
-                for p in projects
-            ],
-        }
+    return ProjectListResponse(
+        signal="PROJECTS_RETRIEVED",
+        page=page,
+        total_pages=total_pages,
+        projects=[
+            ProjectItem(
+                id=str(p.id),
+                project_id=p.project_id
+            )
+            for p in projects
+        ]
     )
 
 
-@projects_router.delete("/{project_id}", summary="Delete a project and all its data")
-async def delete_project(request: Request, project_id: str):
+@projects_router.delete("/{project_id}", summary="Delete a project and all its data", response_model=BaseResponse)
+async def delete_project(request: Request, project_id: str = _PROJECT_ID_PATH):
     """Deletes the project record, all its assets, all its chunks, and the vector collection."""
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    # CR-02: use get_project_by_id so missing projects correctly return 404
+    project = await project_model.get_project_by_id(project_id=project_id)
 
     if not project:
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            content={"signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value},
+            detail={"signal": ResponseSignal.PROJECT_NOT_FOUND_ERROR.value},
         )
 
     errors = []
@@ -89,18 +112,15 @@ async def delete_project(request: Request, project_id: str):
         errors.append("project_record")
 
     if errors:
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_207_MULTI_STATUS,
-            content={
+            detail={
                 "signal": ResponseSignal.DELETE_PROJECT_ERROR.value,
                 "partial_errors": errors,
                 "project_id": project_id,
             },
         )
 
-    return JSONResponse(
-        content={
-            "signal": ResponseSignal.DELETE_PROJECT_SUCCESS.value,
-            "project_id": project_id,
-        }
+    return BaseResponse(
+        signal=ResponseSignal.DELETE_PROJECT_SUCCESS.value
     )

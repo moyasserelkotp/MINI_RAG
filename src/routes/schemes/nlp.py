@@ -1,10 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-
-
-class PushRequest(BaseModel):
-    do_reset: Optional[int] = Field(0, ge=0, le=1, description="Set to 1 to delete and rebuild the collection from scratch")
-
+from typing import Optional, Dict, Any, List, Union
+from .system import BaseResponse
 
 class SearchRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4096, description="Query text to search")
@@ -18,7 +14,6 @@ class SearchRequest(BaseModel):
         None, max_length=128,
         description="Optional Session ID for chat memory (max 128 chars)"
     )
-    # Phase 5: Metadata filtering
     filter_source: Optional[str] = Field(
         None, max_length=256,
         description="Only search chunks from this filename (e.g. 'policy_2024.pdf')"
@@ -27,3 +22,31 @@ class SearchRequest(BaseModel):
         None,
         description="Key-value pairs to filter chunks by metadata (e.g. {'department': 'HR'})"
     )
+
+class InfoIndexResponse(BaseResponse):
+    collection_info: Dict[str, Any]
+
+class SearchResultItem(BaseModel):
+    id: Union[str, int]
+    score: float
+    text: str
+    metadata: Dict[str, Any]
+
+class SearchResponse(BaseResponse):
+    total: int
+    results: List[SearchResultItem]
+
+class AnswerResponse(BaseResponse):
+    answer: str
+    sources: List[Dict[str, Any]]
+    cached: bool
+    session_id: Optional[str] = None
+    # full_prompt and chat_history intentionally omitted — internal details
+    # must not be exposed on the public API surface.
+
+class EvaluationResponse(BaseResponse):
+    metric: str
+    score: float
+    reasoning: str
+    parse_error: bool = False
+    error: Optional[str] = None
