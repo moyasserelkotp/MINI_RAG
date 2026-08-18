@@ -82,6 +82,22 @@ async def delete_project_index(request: Request, project_id: str = _PROJECT_ID):
         nlp_controller.reset_vector_db_collection, project=project
     )
 
+    if deleted is not False:
+        # Also clean up associated chunks and assets in MongoDB so they don't dangle
+        try:
+            from models.ChunkModel import ChunkModel
+            chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
+            await chunk_model.delete_chunks_by_project_id(project_id=project.id)
+        except Exception as e:
+            logger.error("Failed to delete chunks during document reset for %s: %s", project_id, e)
+
+        try:
+            from models.AssetModel import AssetModel
+            asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
+            await asset_model.delete_all_project_assets(asset_project_id=project.id)
+        except Exception as e:
+            logger.error("Failed to delete assets during document reset for %s: %s", project_id, e)
+
     if deleted is False:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -112,7 +128,12 @@ async def delete_project_index_deprecated(request: Request, project_id: str = _P
 
 
 #  Search 
-@nlp_router.post("/retrieve/{project_id}", response_model=SearchResponse)
+@nlp_router.post(
+    "/retrieve/{project_id}", 
+    response_model=SearchResponse,
+    summary="Retrieve relevant documents",
+    description="Searches the vector database for the most relevant document chunks based on the provided query text. Supports hybrid search (BM25 + Semantic) and metadata filtering. Use this endpoint to inspect what documents the system finds without generating an LLM answer."
+)
 @limiter.limit("60/minute")
 async def retrieve_documents(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
 
@@ -141,7 +162,7 @@ async def retrieve_documents(request: Request, search_request: SearchRequest, pr
         metadata_filter=metadata_filter or None,
     )
 
-    if not results:
+    if results is None:
         return SearchResponse(
             signal=ResponseSignal.VECTORDB_SEARCH_ERROR.value,
             total=0,
@@ -170,8 +191,13 @@ async def retrieve_documents(request: Request, search_request: SearchRequest, pr
 async def search_index_deprecated(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
     return await retrieve_documents(request, search_request, project_id)
 
-#  Answer (RAG) — canonical route ─
-@nlp_router.post("/answer/{project_id}", response_model=AnswerResponse, summary="RAG answer")
+#  Answer (RAG) — canonical route
+@nlp_router.post(
+    "/answer/{project_id}", 
+    response_model=AnswerResponse, 
+    summary="Generate an answer (RAG)",
+    description="Executes the full Retrieval-Augmented Generation (RAG) pipeline. Retrieves relevant context from the vector database, formats it into a prompt, and generates an answer using the LLM. Supports conversational memory if `session_id` is provided."
+)
 @limiter.limit("60/minute")
 async def answer_rag(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
 
@@ -188,15 +214,21 @@ async def answer_rag(request: Request, search_request: SearchRequest, project_id
     if search_request.filter_metadata:
         metadata_filter.update(search_request.filter_metadata)
 
-    answer, full_prompt, chat_history, sources, cached = await nlp_controller.answer_rag_question(
-        project=project,
-        query=search_request.text,
-        limit=search_request.limit,
-        use_hybrid=search_request.use_hybrid,
-        score_threshold=search_request.score_threshold,
-        session_id=search_request.session_id,
-        metadata_filter=metadata_filter or None,
-    )
+    try:
+        answer, full_prompt, chat_history, sources, cached = await nlp_controller.answer_rag_question(
+            project=project,
+            query=search_request.text,
+            limit=search_request.limit,
+            use_hybrid=search_request.use_hybrid,
+            score_threshold=search_request.score_threshold,
+            session_id=search_request.session_id,
+            metadata_filter=metadata_filter or None,
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": str(ve)},
+        )
 
     if answer is False:
         raise HTTPException(
@@ -273,21 +305,28 @@ async def answer_rag_stream(
 
     async def event_stream():
         full_answer = []
+        _done_emitted = False
         try:
             gen_client = request.app.generation_client
             if not hasattr(gen_client, "stream_text"):
                 # Fallback: run full answer and emit in one shot
-                answer, _, _, sources, cached = await nlp_controller.answer_rag_question(
-                    project=project,
-                    query=search_request.text,
-                    limit=search_request.limit,
-                    use_hybrid=search_request.use_hybrid,
-                    score_threshold=search_request.score_threshold,
-                    session_id=search_request.session_id,
-                )
+                try:
+                    answer, _, _, sources, cached = await nlp_controller.answer_rag_question(
+                        project=project,
+                        query=search_request.text,
+                        limit=search_request.limit,
+                        use_hybrid=search_request.use_hybrid,
+                        score_threshold=search_request.score_threshold,
+                        session_id=search_request.session_id,
+                    )
+                except ValueError as ve:
+                    yield f"data: {json.dumps({'error': str(ve)})}\n\n"
+                    _done_emitted = True
+                    return
                 if answer:
                     yield f"data: {json.dumps({'token': answer})}\n\n"
                 yield f"data: {json.dumps({'done': True, 'sources': sources, 'cached': cached})}\n\n"
+                _done_emitted = True
                 return
 
             async for token in nlp_controller.answer_rag_stream(
@@ -300,6 +339,7 @@ async def answer_rag_stream(
             ):
                 if isinstance(token, dict) and "error" in token:
                     yield f"data: {json.dumps({'error': token['error']})}\n\n"
+                    _done_emitted = True
                     return
                 full_answer.append(token)
                 yield f"data: {json.dumps({'token': token})}\n\n"
@@ -308,7 +348,8 @@ async def answer_rag_stream(
             logger.error("Streaming RAG error: %s", e)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         finally:
-            yield f"data: {json.dumps({'done': True})}\n\n"
+            if not _done_emitted:
+                yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(
         event_stream(),

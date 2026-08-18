@@ -51,7 +51,7 @@ async def list_sessions(
     session_model = await SessionModel.create_instance(db_client=request.app.db_client)
     skip = (page - 1) * page_size
     sessions, total = await session_model.get_all_sessions(
-        project_id=project.id, skip=skip, limit=page_size
+        project_id=project.project_id, skip=skip, limit=page_size
     )
 
     return SessionListResponse(
@@ -93,7 +93,7 @@ async def get_session_messages(
     # Verify the session belongs to this project (prevents cross-project access)
     session_model = await SessionModel.create_instance(db_client=request.app.db_client)
     session = await session_model.get_session_scoped(
-        session_id=session_id, project_id=project.id
+        session_id=session_id, project_id=project.project_id
     )
     if not session:
         raise HTTPException(
@@ -139,7 +139,7 @@ async def delete_session(request: Request, session_id: str, project_id: str = _P
     # Verify the session belongs to this project before deleting
     session_model = await SessionModel.create_instance(db_client=request.app.db_client)
     session = await session_model.get_session_scoped(
-        session_id=session_id, project_id=project.id
+        session_id=session_id, project_id=project.project_id
     )
     if not session:
         raise HTTPException(

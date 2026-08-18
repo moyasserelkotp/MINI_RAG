@@ -11,21 +11,24 @@ class ProcessRequest(BaseModel):
     do_reset accepts both bool (True/False) and legacy int (0/1) for backward
     compatibility with existing clients.
     """
-    file_id: Optional[str] = None
+    file_id: Optional[str] = Field(None, description="Optional specific file ID to reprocess. If omitted, all unprocessed files may be targeted.")
     chunk_size: Optional[int] = Field(
         default_factory=lambda: get_settings().FILE_PROCESS_CHUNK_SIZE,
         ge=10,
         description="Token/character size of each chunk (minimum 10)",
+        examples=[512]
     )
     overlap_size: Optional[int] = Field(
         default_factory=lambda: get_settings().FILE_PROCESS_OVERLAP_SIZE,
         ge=0,
         description="Overlap between consecutive chunks (must be < chunk_size)",
+        examples=[50]
     )
     # Accept both bool and int 0/1 for backward compatibility
     do_reset: Optional[int] = Field(
         0, ge=0, le=1,
         description="Set 1 (or true) to discard existing chunks and reprocess from scratch",
+        examples=[0]
     )
 
     @validator("overlap_size", always=True)
@@ -49,20 +52,24 @@ class URLIngestRequest(BaseModel):
         min_length=10,
         max_length=2048,
         description="Public URL to fetch and index (must be http:// or https://)",
+        examples=["https://en.wikipedia.org/wiki/Artificial_intelligence"]
     )
     chunk_size: Optional[int] = Field(
         default_factory=lambda: get_settings().FILE_PROCESS_CHUNK_SIZE,
         ge=10,
         description="Chunk size for text splitting",
+        examples=[512]
     )
     overlap_size: Optional[int] = Field(
         default_factory=lambda: get_settings().FILE_PROCESS_OVERLAP_SIZE,
         ge=0,
         description="Overlap size between chunks (must be < chunk_size)",
+        examples=[50]
     )
     do_reset: Optional[int] = Field(
         0, ge=0, le=1,
         description="Set 1 to rebuild chunks for this URL",
+        examples=[0]
     )
 
     @validator("url")

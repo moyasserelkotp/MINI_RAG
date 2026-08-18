@@ -148,7 +148,7 @@ async def delete_asset(request: Request, asset_id: str, project_id: str = _PROJE
     and will be cleaned up on the next full re-index (nlp/index/push with do_reset=1).
     """
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
-    project = await project_model.get_project_or_create_one(project_id=project_id)
+    project = await project_model.get_project_by_id(project_id=project_id)
 
     if not project:
         raise HTTPException(

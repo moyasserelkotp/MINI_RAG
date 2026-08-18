@@ -140,7 +140,7 @@ services:
       celery -A celery_app.celery_config:celery_app flower
       --port=5555
       --broker_api=http://${RABBITMQ_DEFAULT_USER:-minirag}:${RABBITMQ_DEFAULT_PASS:-minirag_rabbit_2222}@rabbitmq:15672/api/
-      --basic_auth=${FLOWER_USER:?err}:${FLOWER_PASSWORD:?err}
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
     ports:
       - "5555:5555"
     networks:
@@ -237,7 +237,7 @@ services:
       - backend
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD:?err} redis-cli ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD:-minirag_redis_2222} redis-cli ping"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -247,7 +247,7 @@ services:
       - "--appendonly"
       - "yes"
       - "--requirepass"
-      - "${REDIS_PASSWORD:?err}"
+      - "${REDIS_PASSWORD:-minirag_redis_2222}"
       - "--maxmemory"
       - "512mb"
       - "--maxmemory-policy"
@@ -280,6 +280,7 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
     env_file:
       - ./env/.env.grafana
     depends_on:

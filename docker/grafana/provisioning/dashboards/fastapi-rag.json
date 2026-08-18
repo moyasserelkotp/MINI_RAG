@@ -1,0 +1,108 @@
+{
+  "title": "FastAPI RAG Metrics",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Rate",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (endpoint, status)",
+          "legendFormat": "{{endpoint}} - {{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Latency (p95)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Generation Tokens / sec",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(rag_generation_tokens_total[5m])",
+          "legendFormat": "{{backend}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAG Cache Hits vs Misses",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(rag_cache_hits_total[5m])",
+          "legendFormat": "Hits - {{project_id}}"
+        },
+        {
+          "expr": "rate(rag_cache_misses_total[5m])",
+          "legendFormat": "Misses - {{project_id}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Retrieval Latency (p95)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le, project_id))",
+          "legendFormat": "{{project_id}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Generation Latency (p95)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(rag_generation_duration_seconds_bucket[5m])) by (le, backend))",
+          "legendFormat": "{{backend}}"
+        }
+      ]
+    }
+  ]
+}

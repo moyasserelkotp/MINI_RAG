@@ -80,6 +80,20 @@ class NLPController(BaseController):
 
     def reset_vector_db_collection(self, project: Project):
         collection_name = self.create_collection_name(project_id=project.project_id)
+        
+        # Also clean up associated memory collections
+        try:
+            cache_col = self.cache_service.get_cache_collection_name(project.project_id)
+            self.vectordb_client.delete_collection(collection_name=cache_col)
+        except Exception:
+            pass
+            
+        try:
+            ent_col = self.memory_service.get_entity_collection_name(project.project_id)
+            self.vectordb_client.delete_collection(collection_name=ent_col)
+        except Exception:
+            pass
+            
         return self.vectordb_client.delete_collection(collection_name=collection_name)
 
     def get_vector_db_collection_info(self, project: Project):
@@ -276,6 +290,13 @@ class NLPController(BaseController):
         # 3. Semantic Cache Check
         cached_answer = await self.cache_service.check_semantic_cache(project.project_id, cache_vec, use_cache, cache_threshold)
         if cached_answer:
+            # Save the exchange to session memory even on a cache hit so that
+            # follow-up questions (e.g. "what is my name?") can still use context.
+            if session_id and session_model and message_model:
+                from models.db_schemes.chat_message import ChatMessage
+                await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
+                await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=cached_answer))
+                await session_model.increment_message_count(session_id, 2)
             return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", [], [], True
 
         # 4. Entity Memory Retrieval
@@ -433,6 +454,12 @@ class NLPController(BaseController):
 
         cached_answer = await self.cache_service.check_semantic_cache(project.project_id, cache_vec, use_cache, cache_threshold)
         if cached_answer:
+            # Save exchange to session memory even on cache hit
+            if session_id and session_model and message_model:
+                from models.db_schemes.chat_message import ChatMessage
+                await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
+                await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=cached_answer))
+                await session_model.increment_message_count(session_id, 2)
             yield cached_answer
             return
 
