@@ -12,7 +12,9 @@ class ProjectModel(BaseDataModel):
     @classmethod
     async def create_instance(cls, db_client: object):
         instance = cls(db_client)
-        await instance.init_collection()
+        if not getattr(cls, "_indexes_created", False):
+            await instance.init_collection()
+            cls._indexes_created = True
         return instance
 
     async def init_collection(self):

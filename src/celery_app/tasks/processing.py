@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 #  Helper: run async code from sync Celery task 
-
 def _run_async(coro):
     """Execute an async coroutine inside a Celery (sync) task.
 
@@ -37,11 +36,8 @@ def _run_async(coro):
 
 
 #  Base task class with retry behaviour 
-
 class ProcessingBaseTask(Task):
     abstract = True
-    # max_retries / retry_backoff are set on the task decorator below
-    # (single source of truth — avoids config drift)
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         logger.error(
@@ -60,7 +56,6 @@ class ProcessingBaseTask(Task):
 
 
 #  Main processing task 
-
 @celery_app.task(
     bind=True,
     base=ProcessingBaseTask,
@@ -68,7 +63,6 @@ class ProcessingBaseTask(Task):
     queue="processing",
     track_started=True,
     trail=True,
-    # Retry config (single source of truth)
     max_retries=3,
     default_retry_delay=10,      # seconds before first retry
     retry_backoff=True,          # exponential: 10s, 20s, 40s

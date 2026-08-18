@@ -285,9 +285,11 @@ class QdrantDBProvider(VectorDBInterface):
                 return []
 
             # Stage 2: BM25 re-rank over candidates only
+            import re as _re
+            _tok = lambda s: _re.findall(r"[a-z0-9]+", s.lower())
             candidate_texts = [r.payload.get("text", "") for r in semantic_results]
-            tokenized_query = query_text.lower().split()
-            bm25 = BM25Okapi([t.lower().split() for t in candidate_texts])
+            tokenized_query = _tok(query_text)
+            bm25 = BM25Okapi([_tok(t) for t in candidate_texts])
             bm25_scores = bm25.get_scores(tokenized_query)
 
             max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1.0

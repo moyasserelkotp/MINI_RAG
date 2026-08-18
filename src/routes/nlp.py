@@ -43,7 +43,7 @@ def _project_not_found(project_id: str):
 
 
 
-# ── Index info ────────────────────────────────────────────────────────────────
+#  Index info 
 @nlp_router.get("/index/info/{project_id}", response_model=InfoIndexResponse)
 @limiter.limit("60/minute")
 async def get_project_index_info(request: Request, project_id: str = _PROJECT_ID):
@@ -54,7 +54,10 @@ async def get_project_index_info(request: Request, project_id: str = _PROJECT_ID
         _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
-    collection_info = nlp_controller.get_vector_db_collection_info(project=project)
+    import asyncio
+    collection_info = await asyncio.to_thread(
+        nlp_controller.get_vector_db_collection_info, project=project
+    )
 
     return InfoIndexResponse(
         signal=ResponseSignal.VECTORDB_COLLECTION_RETRIEVED.value,
@@ -62,7 +65,7 @@ async def get_project_index_info(request: Request, project_id: str = _PROJECT_ID
     )
 
 
-# ── Delete index ──────────────────────────────────────────────────────────────
+#  Delete index 
 # Canonical new route: DELETE /api/v1/nlp/documents/{project_id}
 @nlp_router.delete("/documents/{project_id}", response_model=BaseResponse, summary="Delete project vector index")
 @limiter.limit("5/minute")
@@ -74,7 +77,10 @@ async def delete_project_index(request: Request, project_id: str = _PROJECT_ID):
         _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
-    deleted = nlp_controller.reset_vector_db_collection(project=project)
+    import asyncio
+    deleted = await asyncio.to_thread(
+        nlp_controller.reset_vector_db_collection, project=project
+    )
 
     if deleted is False:
         raise HTTPException(
@@ -105,7 +111,7 @@ async def delete_project_index_deprecated(request: Request, project_id: str = _P
     return await delete_project_index(request, project_id)
 
 
-# ── Search ────────────────────────────────────────────────────────────────────
+#  Search 
 @nlp_router.post("/retrieve/{project_id}", response_model=SearchResponse)
 @limiter.limit("60/minute")
 async def retrieve_documents(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
@@ -164,7 +170,7 @@ async def retrieve_documents(request: Request, search_request: SearchRequest, pr
 async def search_index_deprecated(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
     return await retrieve_documents(request, search_request, project_id)
 
-# ── Answer (RAG) — canonical route ───────────────────────────────────────────
+#  Answer (RAG) — canonical route ─
 @nlp_router.post("/answer/{project_id}", response_model=AnswerResponse, summary="RAG answer")
 @limiter.limit("60/minute")
 async def answer_rag(request: Request, search_request: SearchRequest, project_id: str = _PROJECT_ID):
@@ -243,7 +249,7 @@ async def answer_rag_deprecated(request: Request, search_request: SearchRequest,
     return await answer_rag(request, search_request, project_id)
 
 
-# ── Streaming Answer — canonical route ───────────────────────────────────────
+#  Streaming Answer — canonical route ─
 @nlp_router.post(
     "/answer/stream/{project_id}",
     summary="Stream RAG answer via SSE",

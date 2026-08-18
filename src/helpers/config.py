@@ -13,21 +13,19 @@ class Settings(BaseSettings):
 
     # Application Settings 
     DEBUG: bool = False
-    LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
+    LOG_LEVEL: str = "INFO"
 
     # Authentication
-    # Default: True — authentication is REQUIRED in production.
-    # To disable during local development, set ENABLE_AUTH=false in your .env
     ENABLE_AUTH: bool = True
-    API_KEYS: Union[List[str], str] = []   # Comma-separated valid API keys
+    API_KEYS: Union[List[str], str] = []   
 
     # Rate Limiting
-    RATE_LIMIT_ANSWER: str = "10/minute"   # Limit for /answer endpoints
-    RATE_LIMIT_UPLOAD: str = "20/minute"   # Limit for /upload endpoints
-    RATE_LIMIT_GLOBAL: str = "100/minute"  # Global limit per IP
+    RATE_LIMIT_ANSWER: str = "10/minute"   
+    RATE_LIMIT_UPLOAD: str = "20/minute"   
+    RATE_LIMIT_GLOBAL: str = "100/minute"  
     FILE_ALLOWED_TYPES: Union[List[str], str] = []
-    FILE_MAX_SIZE: int = 0          # bytes (already in bytes, no extra scaling)
-    FILE_DEFAULT_CHUNK_SIZE: int = 512_000  # streaming read chunk (bytes)
+    FILE_MAX_SIZE: int = 0          
+    FILE_DEFAULT_CHUNK_SIZE: int = 512_000 
     FILE_PROCESS_CHUNK_SIZE: int = 512
     FILE_PROCESS_OVERLAP_SIZE: int = 50
     CHUNK_STRATEGY: str = "recursive"
@@ -130,6 +128,7 @@ class Settings(BaseSettings):
     USE_ENTITY_MEMORY: bool = True
     USE_VECTOR_MEMORY: bool = True
     USE_SEMANTIC_CACHE: bool = True
+    SEMANTIC_CACHE_TTL_SECONDS: int = 86_400   # RAG-01: 24 h default; set 0 to disable TTL
 
     #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"

@@ -14,7 +14,9 @@ class SessionModel(BaseDataModel):
     @classmethod
     async def create_instance(cls, db_client: object):
         instance = cls(db_client)
-        await instance.init_collection()
+        if not getattr(cls, "_indexes_created", False):
+            await instance.init_collection()
+            cls._indexes_created = True
         return instance
 
     async def init_collection(self):
@@ -35,9 +37,13 @@ class SessionModel(BaseDataModel):
     async def get_session_or_create_one(self, session_id: str, project_id: str):
         record = await self.collection.find_one({"session_id": session_id})
         if record is None:
-            session = ChatSession(session_id=session_id, project_id=project_id)
+            session = ChatSession(session_id=session_id, project_id=str(project_id))
             session = await self.create_session(session=session)
             return session
+        
+        if str(record.get("project_id")) != str(project_id):
+            raise ValueError("Session isolation violation: session_id belongs to a different project")
+            
         return ChatSession(**record)
 
     async def update_summary(self, session_id: str, new_summary: str):
@@ -50,6 +56,24 @@ class SessionModel(BaseDataModel):
         await self.collection.update_one(
             {"session_id": session_id},
             {"$inc": {"message_count": amount}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+        )
+
+    async def update_summary_and_reset_count(self, session_id: str, new_summary: str):
+        """SVC-01: Atomic combined update — sets new summary and resets message_count to 0.
+
+        This replaces the pattern of calling update_summary() followed by a
+        separate update_one({message_count: 0}), which had a race window between
+        the two MongoDB operations.
+        """
+        await self.collection.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "summary": new_summary,
+                    "message_count": 0,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            }
         )
 
     # Phase 6: Session management methods

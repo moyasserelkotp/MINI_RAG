@@ -30,7 +30,7 @@ def mock_project_model(mocker):
 def test_nlp_answer_404(client, mock_project_model):
     response = client.post("/api/v1/nlp/answer/missing-project", json={"text": "hello"}, headers={"X-API-Key": "mock-api-key"})
     assert response.status_code == 404
-    assert response.json()["detail"]["signal"] == "PROJECT_NOT_FOUND_ERROR"
+    assert response.json()["detail"]["signal"] == "project_not_found"
 
 def test_nlp_search_404(client, mock_project_model):
     response = client.post("/api/v1/nlp/index/search/missing-project", json={"text": "hello"}, headers={"X-API-Key": "mock-api-key"})

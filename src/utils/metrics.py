@@ -19,7 +19,7 @@ RETRIEVAL_LATENCY = Histogram(
     "rag_retrieval_duration_seconds", "Vector DB retrieval latency", ["project_id"]
 )
 CHUNKS_RETRIEVED = Histogram(
-    "rag_chunks_retrieved_total", "Number of chunks retrieved per query", ["project_id"]
+    "rag_chunks_retrieved_total", "Number of chunks retrieved per query", []
 )
 
 # Generation Metrics
@@ -111,8 +111,8 @@ def record_retrieval_latency(project_id: str, duration: float):
     RETRIEVAL_LATENCY.labels(project_id=project_id).observe(duration)
 
 def record_chunks_retrieved(project_id: str, count: int):
-    """Record number of chunks retrieved"""
-    CHUNKS_RETRIEVED.labels(project_id=project_id).observe(count)
+    """Record number of chunks retrieved (project_id kept as parameter for API compat)"""
+    CHUNKS_RETRIEVED.observe(count)
 
 def record_cache_hit(project_id: str):
     """Record cache hit"""

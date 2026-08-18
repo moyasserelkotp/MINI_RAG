@@ -13,7 +13,7 @@ logger = logging.getLogger("uvicorn.error")
 
 _PROJECT_ID_PATH = Path(
     ...,
-    regex=r"^[a-zA-Z0-9_-]{1,64}$",
+    pattern=r"^[a-zA-Z0-9_-]{1,64}$",
     description="Project identifier (alphanumeric, underscores, hyphens, max 64 chars)",
 )
 
@@ -83,7 +83,8 @@ async def delete_project(request: Request, project_id: str = _PROJECT_ID_PATH):
             embedding_client=request.app.embedding_client,
             template_parser=request.app.template_parser,
         )
-        nlp_controller.reset_vector_db_collection(project=project)
+        import asyncio
+        await asyncio.to_thread(nlp_controller.reset_vector_db_collection, project=project)
     except Exception as e:
         logger.error("Failed to delete vector collection for %s: %s", project_id, e)
         errors.append("vectordb")
@@ -124,3 +125,27 @@ async def delete_project(request: Request, project_id: str = _PROJECT_ID_PATH):
     return BaseResponse(
         signal=ResponseSignal.DELETE_PROJECT_SUCCESS.value
     )
+
+# ── Alias Router for UI Compatibility ─────────────────────────────────────────
+
+project_alias_router = APIRouter(
+    prefix="/api/v1/project",
+    tags=["Projects (Alias)"],
+    include_in_schema=False,
+)
+
+@project_alias_router.post("/")
+async def create_project_alias(request: Request, project_req: ProjectRequest):
+    return await create_project(request, project_req)
+
+@project_alias_router.get("/")
+async def list_projects_alias(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+):
+    return await list_projects(request, page, page_size)
+
+@project_alias_router.delete("/{project_id}")
+async def delete_project_alias(request: Request, project_id: str = _PROJECT_ID_PATH):
+    return await delete_project(request, project_id)

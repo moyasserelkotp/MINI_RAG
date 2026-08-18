@@ -1,16 +1,3 @@
-"""
-routes/tasks.py
-===============
-REST API for submitting background Celery jobs and polling their status.
-
-Endpoints
----------
-  POST /api/v1/tasks/process-file/{project_id}   – async document chunking (single file)
-  POST /api/v1/tasks/process-all/{project_id}    – async document chunking (all files)
-  POST /api/v1/tasks/index/{project_id}          – async vector-DB indexing
-  GET  /api/v1/tasks/{task_id}                   – poll task status + result
-  DELETE /api/v1/tasks/{task_id}                 – revoke / cancel a pending task
-"""
 import logging
 from typing import Optional
 
@@ -258,3 +245,17 @@ async def revoke_task(request: Request, task_id: str, terminate: bool = False):
     )
 
 
+
+"""
+routes/tasks.py
+===============
+REST API for submitting background Celery jobs and polling their status.
+
+Endpoints
+---------
+  POST /api/v1/tasks/process-file/{project_id}   – async document chunking (single file)
+  POST /api/v1/tasks/process-all/{project_id}    – async document chunking (all files)
+  POST /api/v1/tasks/index/{project_id}          – async vector-DB indexing
+  GET  /api/v1/tasks/{task_id}                   – poll task status + result
+  DELETE /api/v1/tasks/{task_id}                 – revoke / cancel a pending task
+"""

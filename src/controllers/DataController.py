@@ -60,7 +60,15 @@ class DataController(BaseController):
     def get_clean_file_name(self, orig_file_name: str) -> str:
         # Keep only word characters and dots; replace spaces with underscore
         cleaned = re.sub(r"[^\w.]", "", orig_file_name.strip())
-        return cleaned.replace(" ", "_")
+        cleaned = cleaned.replace(" ", "_")
+        if len(cleaned) > 100:
+            parts = cleaned.rsplit(".", 1)
+            if len(parts) == 2:
+                ext = parts[1][:10]
+                cleaned = f"{parts[0][:89]}.{ext}"
+            else:
+                cleaned = cleaned[:100]
+        return cleaned
 
     def delete_file_by_name(self, file_id: str) -> bool:
         """Remove the physical file from every known project folder.

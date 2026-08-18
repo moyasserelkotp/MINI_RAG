@@ -37,8 +37,7 @@ data_router = APIRouter(
 )
 
 
-# ── Upload ────────────────────────────────────────────────────────────────────
-
+# Upload 
 @data_router.post("/upload/{project_id}", response_model=AssetUploadResponse)
 @limiter.limit("30/minute")
 async def upload_data(
@@ -103,8 +102,7 @@ async def upload_data(
     )
 
 
-# ── List assets ───────────────────────────────────────────────────────────────
-
+# List assets
 @data_router.get("/assets/{project_id}", response_model=AssetListResponse)
 @limiter.limit("60/minute")
 async def list_assets(request: Request, project_id: str = _PROJECT_ID):
@@ -141,8 +139,7 @@ async def list_assets(request: Request, project_id: str = _PROJECT_ID):
 
 
 
-# ── Delete single asset ───────────────────────────────────────────────────────
-
+#  Delete single asset 
 @data_router.delete("/assets/{project_id}/{asset_id}", response_model=BaseResponse)
 @limiter.limit("60/minute")
 async def delete_asset(request: Request, asset_id: str, project_id: str = _PROJECT_ID):
@@ -198,8 +195,7 @@ async def delete_asset(request: Request, asset_id: str, project_id: str = _PROJE
         signal="DELETE_ASSET_SUCCESS"
     )
 
-# ── Phase 9: Batch Upload ─────────────────────────────────────────────────────
-
+#  Phase 9: Batch Upload
 @data_router.post("/upload/batch/{project_id}", summary="Upload multiple files at once", response_model=BatchUploadResponse)
 @limiter.limit("10/minute")
 async def upload_batch(
@@ -276,8 +272,7 @@ async def upload_batch(
     )
 
 
-# ── Phase 7: URL Ingestion ────────────────────────────────────────────────────
-
+#  Phase 7: URL Ingestion
 @data_router.post("/ingest/url/{project_id}", summary="Ingest content from a public URL", response_model=URLIngestResponse)
 @limiter.limit("10/minute")
 async def ingest_url(
@@ -312,10 +307,11 @@ async def ingest_url(
         addr_info = await loop.getaddrinfo(parsed.hostname, None)
         for res in addr_info:
             ip = ipaddress.ip_address(res[4][0])
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
+            if (ip.is_private or ip.is_loopback or ip.is_link_local or 
+                ip.is_multicast or ip.is_unspecified or ip.is_reserved):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, 
-                    detail={"signal": "URL_BLOCKED", "error": "Private or internal IPs are not allowed"}
+                    detail={"signal": "URL_BLOCKED", "error": "Private, internal, or reserved IPs are not allowed"}
                 )
     except HTTPException:
         raise

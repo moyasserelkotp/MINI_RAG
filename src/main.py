@@ -10,6 +10,7 @@ from helpers.config import get_settings
 from routes import base, data, nlp
 from routes.projects import projects_router
 from routes.tasks import tasks_router
+from routes.projects import project_alias_router
 from routes.sessions import sessions_router
 from routes.eval import eval_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -203,9 +204,14 @@ else:
 app.add_middleware(RequestIDMiddleware)
 
 # CORS — origins controlled via CORS_ALLOWED_ORIGINS in settings / .env
+cors_origins = get_settings().CORS_ALLOWED_ORIGINS
+if not settings.DEBUG and cors_origins == ["*"]:
+    logger.error("CORS wildcard '*' is not allowed in production. Defaulting to empty list.")
+    cors_origins = []
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_settings().CORS_ALLOWED_ORIGINS,  # FIX: no longer a wildcard '*'
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -215,6 +221,7 @@ app.include_router(base.base_router)
 app.include_router(data.data_router)
 app.include_router(nlp.nlp_router)
 app.include_router(projects_router)
+app.include_router(project_alias_router)
 app.include_router(tasks_router)
 app.include_router(sessions_router)
 app.include_router(eval_router)

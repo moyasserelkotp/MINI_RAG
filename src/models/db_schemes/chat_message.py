@@ -20,8 +20,8 @@ class ChatMessage(BaseModel):
     def get_indexes(cls):
         return [
             {
-                "key": [("session_id", 1)],
-                "name": "session_id_idx",
+                "key": [("session_id", 1), ("created_at", -1)],
+                "name": "session_id_created_at_idx",
                 "unique": False,
             }
         ]

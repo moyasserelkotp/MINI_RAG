@@ -29,8 +29,13 @@ from services.prompt_service import PromptService
 logger = logging.getLogger(__name__)
 
 
+
+_BACKGROUND_TASKS: set = set()
+
+
 def _safe_task_callback(label: str):
     def _cb(t: asyncio.Task):
+        _BACKGROUND_TASKS.discard(t)
         try:
             exc = t.exception()
             if exc:
@@ -278,7 +283,7 @@ class NLPController(BaseController):
         if session_id and use_entity:
             try:
                 ent_col = self.memory_service.get_entity_collection_name(project.project_id)
-                self.memory_service.init_entity_collection(project.project_id)
+                await self.memory_service.init_entity_collection(project.project_id)
                 ent_docs = await asyncio.to_thread(
                     self.vectordb_client.search_by_vector,
                     collection_name=ent_col, vector=cache_vec, limit=3, score_threshold=0.6
@@ -292,6 +297,11 @@ class NLPController(BaseController):
         retrieved_documents, sources = await self.retrieval_service.retrieve_and_rerank_context(
             self.search_vector_db_collection, project, search_query, limit, use_hybrid, score_threshold, metadata_filter, use_vector, use_rerank
         )
+
+        # RAG-05: Return a structured no-context signal so the caller can render
+        # a proper "no relevant documents" message instead of an LLM hallucination.
+        if not retrieved_documents and use_vector:
+            return "NO_CONTEXT", None, [], [], False
 
         # 6. Prompt Construction
         full_prompt, chat_history_prompts = self.prompt_service.format_system_prompt(
@@ -343,6 +353,8 @@ class NLPController(BaseController):
         # 1. Semantic cache write
         if use_cache and not is_negative:
             try:
+                import time as _time
+                cache_ttl = getattr(self.app_settings, "SEMANTIC_CACHE_TTL_SECONDS", 86_400)
                 cache_id = self.cache_service.build_cache_key(project.project_id, search_query)
                 cache_col_name = self.cache_service.get_cache_collection_name(project.project_id)
                 task = asyncio.create_task(
@@ -351,10 +363,11 @@ class NLPController(BaseController):
                         collection_name=cache_col_name,
                         text=search_query,
                         vector=cache_vec,
-                        metadata={"answer": answer},
+                        metadata={"answer": answer, "expires_at": _time.time() + cache_ttl},
                         record_id=cache_id,
                     )
                 )
+                _BACKGROUND_TASKS.add(task)
                 task.add_done_callback(_safe_task_callback("Cache write"))
             except Exception:
                 pass
@@ -373,6 +386,7 @@ class NLPController(BaseController):
                 summary_task = asyncio.create_task(
                     self.memory_service.update_session_summary(session_id, project.id, session_model, message_model)
                 )
+                _BACKGROUND_TASKS.add(summary_task)
                 summary_task.add_done_callback(_safe_task_callback("Session summary"))
 
         # 4. Entity extraction
@@ -380,6 +394,7 @@ class NLPController(BaseController):
             entity_task = asyncio.create_task(
                 self.memory_service.extract_and_save_entities(session_id, project, query, answer, cache_vec)
             )
+            _BACKGROUND_TASKS.add(entity_task)
             entity_task.add_done_callback(_safe_task_callback("Entity extraction"))
 
     async def answer_rag_stream(
@@ -425,7 +440,7 @@ class NLPController(BaseController):
         if session_id and use_entity:
             try:
                 ent_col = self.memory_service.get_entity_collection_name(project.project_id)
-                self.memory_service.init_entity_collection(project.project_id)
+                await self.memory_service.init_entity_collection(project.project_id)
                 ent_docs = await asyncio.to_thread(
                     self.vectordb_client.search_by_vector, collection_name=ent_col, vector=cache_vec, limit=3, score_threshold=0.6
                 )

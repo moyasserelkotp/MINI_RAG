@@ -4,10 +4,11 @@ import hashlib
 import time
 from typing import Optional
 from models.db_schemes import Project
-from models.enums.DataBaseEnum import DataBaseEnum
 from utils.metrics import record_generation_latency, record_generation_error
 
 logger = logging.getLogger(__name__)
+
+_COLLECTION_LOCKS: dict[str, asyncio.Lock] = {}
 
 def _safe_task_callback(label: str):
     def _cb(t: asyncio.Task):
@@ -33,17 +34,24 @@ class MemoryService:
         dim = self.embedding_client.embedding_size
         return f"entities_{project_id}_{dim}".strip()
 
-    def init_entity_collection(self, project_id: str):
+    async def init_entity_collection(self, project_id: str):
         col_name = self.get_entity_collection_name(project_id)
         if col_name in self._initialized_collections:
             return
-        if not self.vectordb_client.is_collection_existed(collection_name=col_name):
-            self.vectordb_client.create_collection(
-                collection_name=col_name,
-                embedding_size=self.embedding_client.embedding_size,
-                do_reset=False
-            )
-        self._initialized_collections.add(col_name)
+        
+        lock = _COLLECTION_LOCKS.setdefault(col_name, asyncio.Lock())
+        async with lock:
+            if col_name in self._initialized_collections:
+                return
+            exists = await asyncio.to_thread(self.vectordb_client.is_collection_existed, collection_name=col_name)
+            if not exists:
+                await asyncio.to_thread(
+                    self.vectordb_client.create_collection,
+                    collection_name=col_name,
+                    embedding_size=self.embedding_client.embedding_size,
+                    do_reset=False
+                )
+            self._initialized_collections.add(col_name)
 
     async def prepare_session(self, session_id: Optional[str], project_id: str, use_window: bool, use_summary: bool, window_k: int):
         session_obj, session_messages, session_model, message_model = None, [], None, None
@@ -84,11 +92,8 @@ class MemoryService:
                 summary = None
 
             if summary:
-                await session_model.update_summary(session_id, summary)
-                await self.db_client[DataBaseEnum.COLLECTION_CHAT_SESSION_NAME.value].update_one(
-                    {"session_id": session_id},
-                    {"$set": {"message_count": 0}}
-                )
+                # SVC-01: single atomic update — summary + count reset in one round-trip
+                await session_model.update_summary_and_reset_count(session_id, summary)
         except Exception as e:
             logger.error("Summary Generation Failed: %s", e)
 
@@ -98,7 +103,7 @@ class MemoryService:
                 "Identify any crucial facts, user preferences, or distinct entities the user stated about themselves "
                 "or the conversation implicitly established that are worth remembering long-term. "
                 "Return them as a bulleted list. If there is nothing crucial to remember, reply with nothing.\n\n"
-                f"User: {query}\n"
+                f"User:\n```\n{query}\n```\n"
             )
             chat_history = [
                 self.generation_client.construct_prompt("You extract explicit long-term memory facts. Keep it short.", self.generation_client.enums.SYSTEM.value)
@@ -107,17 +112,26 @@ class MemoryService:
             facts = facts.strip() if facts else ""
 
             if facts and len(facts) > 5 and "nothing" not in facts.lower():
-                self.init_entity_collection(project.project_id)
+                await self.init_entity_collection(project.project_id)
                 col_name = self.get_entity_collection_name(project.project_id)
                 fact_id = int(hashlib.sha256((session_id + query).encode()).hexdigest(), 16) % (2**63 - 1)
-                await asyncio.to_thread(
-                    self.vectordb_client.insert_one,
-                    collection_name=col_name,
+                # RAG-03: embed the fact text as DOCUMENT (not re-using the query vector)
+                # so retrieval uses the correct asymmetric embedding space.
+                from stores.llm.LLMEnums import DocumentTypeEnum
+                fact_vec = await asyncio.to_thread(
+                    self.embedding_client.embed_text,
                     text=facts,
-                    vector=q_vec,
-                    metadata={"source": "entity_extractor", "session_id": session_id},
-                    record_id=fact_id
+                    document_type=DocumentTypeEnum.DOCUMENT.value,
                 )
+                if fact_vec:
+                    await asyncio.to_thread(
+                        self.vectordb_client.insert_one,
+                        collection_name=col_name,
+                        text=facts,
+                        vector=fact_vec,
+                        metadata={"source": "entity_extractor", "session_id": session_id},
+                        record_id=fact_id
+                    )
         except Exception as e:
             logger.error("Entity Extraction Failed: %s", e)
 
@@ -129,7 +143,7 @@ class MemoryService:
             history_lines = []
             for m in session_messages:
                 role = "User" if m.role == "user" else "Assistant"
-                history_lines.append(f"{role}: {m.text}")
+                history_lines.append(f"{role}: ```{m.text}```")
 
             history_text = "\n".join(history_lines)
             condense_prompt = self.template_parser.get(

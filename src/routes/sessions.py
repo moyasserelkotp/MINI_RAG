@@ -36,8 +36,7 @@ async def _require_project(db_client, project_id: str):
     return project
 
 
-# ── List all sessions for a project ──────────────────────────────────────────
-
+#  List all sessions for a project 
 @sessions_router.get("/sessions/{project_id}", summary="List all sessions for a project", response_model=SessionListResponse)
 @limiter.limit("60/minute")
 async def list_sessions(
@@ -74,8 +73,7 @@ async def list_sessions(
     )
 
 
-# ── Get messages from a specific session ─────────────────────────────────────
-
+#  Get messages from a specific session
 @sessions_router.get(
     "/sessions/{project_id}/{session_id}",
     summary="Get all messages in a session",
@@ -127,8 +125,7 @@ async def get_session_messages(
     )
 
 
-# ── Delete a session and all its messages ─────────────────────────────────────
-
+#  Delete a session and all its messages
 @sessions_router.delete(
     "/sessions/{project_id}/{session_id}",
     summary="Delete a session and all its messages",

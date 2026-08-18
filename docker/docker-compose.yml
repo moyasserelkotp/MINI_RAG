@@ -140,7 +140,7 @@ services:
       celery -A celery_app.celery_config:celery_app flower
       --port=5555
       --broker_api=http://${RABBITMQ_DEFAULT_USER:-minirag}:${RABBITMQ_DEFAULT_PASS:-minirag_rabbit_2222}@rabbitmq:15672/api/
-      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower_admin_2222}
+      --basic_auth=${FLOWER_USER:?err}:${FLOWER_PASSWORD:?err}
     ports:
       - "5555:5555"
     networks:
@@ -237,7 +237,7 @@ services:
       - backend
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD:-minirag_redis_2222} redis-cli ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_PASSWORD:?err} redis-cli ping"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -247,11 +247,11 @@ services:
       - "--appendonly"
       - "yes"
       - "--requirepass"
-      - "${REDIS_PASSWORD:-minirag_redis_2222}"
+      - "${REDIS_PASSWORD:?err}"
       - "--maxmemory"
       - "512mb"
       - "--maxmemory-policy"
-      - "allkeys-lru"
+      - "volatile-lru"
 
   # Prometheus Monitoring
   prometheus:

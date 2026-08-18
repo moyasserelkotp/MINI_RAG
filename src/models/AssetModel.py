@@ -13,7 +13,9 @@ class AssetModel(BaseDataModel):
     @classmethod
     async def create_instance(cls, db_client: object):
         instance = cls(db_client)
-        await instance.init_collection()
+        if not getattr(cls, "_indexes_created", False):
+            await instance.init_collection()
+            cls._indexes_created = True
         return instance
 
     async def init_collection(self):
@@ -38,13 +40,13 @@ class AssetModel(BaseDataModel):
         asset.id = result.inserted_id
         return asset
 
-    async def get_all_project_assets(self, asset_project_id, asset_type: str):
+    async def get_all_project_assets(self, asset_project_id, asset_type: str, limit: int = 1000):
         records = await self.collection.find(
             {
                 "asset_project_id": self._resolve_project_id(asset_project_id),
                 "asset_type": asset_type,
             }
-        ).to_list(length=None)
+        ).to_list(length=limit)
         return [Asset(**record) for record in records]
 
     async def get_asset_record(

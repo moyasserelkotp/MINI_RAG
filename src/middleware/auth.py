@@ -4,15 +4,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Paths that are always accessible without an API key
 EXEMPT_PATHS = {
     "/api/v1/",
     "/api/v1/health",
     "/api/v1/health/detailed",
-    "/metrics",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
     "/favicon.ico",
 }
 
@@ -31,13 +26,26 @@ async def api_key_middleware(request: Request, call_next):
         return await call_next(request)
 
     # Exempt paths — always allowed
-    if request.url.path in EXEMPT_PATHS or request.url.path.startswith("/docs"):
+    if request.url.path in EXEMPT_PATHS:
+        return await call_next(request)
+
+    # In debug mode, allow docs and metrics without auth
+    if settings.DEBUG and request.url.path in {"/docs", "/redoc", "/openapi.json", "/metrics"}:
         return await call_next(request)
 
     api_key = request.headers.get("X-API-Key")
     valid_keys = settings.API_KEYS
 
-    if not api_key or api_key not in valid_keys:
+    is_valid = False
+    if api_key and valid_keys:
+        import hmac
+        api_key_bytes = api_key.encode('utf-8')
+        for valid_key in valid_keys:
+            if hmac.compare_digest(api_key_bytes, valid_key.encode('utf-8')):
+                is_valid = True
+                break
+
+    if not is_valid:
         logger.warning("Unauthorized access attempt to %s (Invalid or missing API key)", request.url.path)
         return JSONResponse(
             status_code=401,

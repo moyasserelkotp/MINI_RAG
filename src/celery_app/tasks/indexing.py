@@ -18,9 +18,32 @@ from models.ProjectModel import ProjectModel
 
 logger = logging.getLogger(__name__)
 
+_clients = {}
+
+def get_shared_clients():
+    if not _clients:
+        settings = get_settings()
+        llm_factory = LLMProviderFactory(settings)
+        vectordb_factory = VectorDBProviderFactory(settings)
+
+        generation_client = llm_factory.create(provider=settings.GENERATION_BACKEND)
+        generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
+
+        embedding_client = llm_factory.create(provider=settings.EMBEDDING_BACKEND)
+        embedding_client.set_embedding_model(
+            model_id=settings.EMBEDDING_MODEL_ID,
+            embedding_size=settings.EMBEDDING_MODEL_SIZE,
+        )
+
+        vectordb_client = vectordb_factory.create(provider=settings.VECTOR_DB_BACKEND)
+        vectordb_client.connect()
+
+        _clients["generation"] = generation_client
+        _clients["embedding"] = embedding_client
+        _clients["vectordb"] = vectordb_client
+    return _clients["generation"], _clients["embedding"], _clients["vectordb"]
 
 #  Helper: run async from sync context 
-
 def _run_async(coro):
     """Execute an async coroutine inside a Celery (sync) task.
 
@@ -32,7 +55,6 @@ def _run_async(coro):
 
 
 #  Base task 
-
 class IndexingBaseTask(Task):
     abstract = True
     # max_retries / retry_backoff are set on the task decorator below
@@ -48,7 +70,6 @@ class IndexingBaseTask(Task):
 
 
 #  Index-push task 
-
 @celery_app.task(
     bind=True,
     base=IndexingBaseTask,
@@ -88,21 +109,7 @@ def index_project_into_vectordb(
 
     settings = get_settings()
 
-    # Build stateless clients (no FastAPI app context available in worker)
-    llm_factory      = LLMProviderFactory(settings)
-    vectordb_factory = VectorDBProviderFactory(settings)
-
-    generation_client = llm_factory.create(provider=settings.GENERATION_BACKEND)
-    generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
-
-    embedding_client = llm_factory.create(provider=settings.EMBEDDING_BACKEND)
-    embedding_client.set_embedding_model(
-        model_id=settings.EMBEDDING_MODEL_ID,
-        embedding_size=settings.EMBEDDING_MODEL_SIZE,
-    )
-
-    vectordb_client = vectordb_factory.create(provider=settings.VECTOR_DB_BACKEND)
-    vectordb_client.connect()
+    generation_client, embedding_client, vectordb_client = get_shared_clients()
 
     template_parser = TemplateParser(
         language=settings.PRIMARY_LANG,
@@ -134,7 +141,9 @@ def index_project_into_vectordb(
             page_no      = 1
             inserted_total = 0
             idx          = 0
-            is_first_page = True
+
+            if do_reset:
+                await asyncio.to_thread(nlp_controller.reset_vector_db_collection, project)
 
             while has_records:
                 page_chunks = await chunk_model.get_project_chunks(
@@ -149,13 +158,13 @@ def index_project_into_vectordb(
                 chunks_ids = list(range(idx, idx + len(page_chunks)))
                 idx += len(page_chunks)
 
-                is_inserted = nlp_controller.index_into_vector_db(
+                is_inserted = await asyncio.to_thread(
+                    nlp_controller.index_into_vector_db,
                     project=project,
                     chunks=page_chunks,
-                    do_reset=bool(do_reset) and is_first_page,
+                    do_reset=False,
                     chunks_ids=chunks_ids,
                 )
-                is_first_page = False
 
                 if not is_inserted:
                     # Qdrant write failed — raise so Celery retries the task
@@ -177,10 +186,6 @@ def index_project_into_vectordb(
 
         finally:
             db_client.close()
-            try:
-                vectordb_client.disconnect()
-            except Exception:
-                pass
 
     try:
         result = _run_async(_async_index())

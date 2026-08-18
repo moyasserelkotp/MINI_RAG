@@ -3,6 +3,7 @@ from ..LLMEnums import CoHereEnums, DocumentTypeEnum
 import cohere
 import logging
 import time
+import threading
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class CoHereProvider(LLMInterface):
         # Rate limiting: Cohere trial keys allow ~100 calls/min
         self._last_embed_time = 0.0
         self._min_embed_interval = 0.65  # seconds between single-call embeds
+        self._rate_limit_lock = threading.Lock()
 
     @property
     def enums(self):
@@ -47,6 +49,8 @@ class CoHereProvider(LLMInterface):
         self.embedding_size = embedding_size
 
     def process_text(self, text: str) -> str:
+        if len(text) > self.default_input_max_characters:
+            logger.warning("Text truncated from %d to %d characters.", len(text), self.default_input_max_characters)
         return text[: self.default_input_max_characters].strip()
 
     def generate_text(
@@ -100,10 +104,11 @@ class CoHereProvider(LLMInterface):
             return None
 
         # Rate limiting
-        elapsed = time.monotonic() - self._last_embed_time
-        if elapsed < self._min_embed_interval:
-            time.sleep(self._min_embed_interval - elapsed)
-        self._last_embed_time = time.monotonic()
+        with self._rate_limit_lock:
+            elapsed = time.monotonic() - self._last_embed_time
+            if elapsed < self._min_embed_interval:
+                time.sleep(self._min_embed_interval - elapsed)
+            self._last_embed_time = time.monotonic()
 
         input_type = self._cohere_input_type(document_type)
 
@@ -137,10 +142,11 @@ class CoHereProvider(LLMInterface):
             batch = [self.process_text(t) for t in texts[i : i + self._BATCH_LIMIT]]
 
             # Mild rate-limiting between batch calls
-            elapsed = time.monotonic() - self._last_embed_time
-            if elapsed < self._min_embed_interval:
-                time.sleep(self._min_embed_interval - elapsed)
-            self._last_embed_time = time.monotonic()
+            with self._rate_limit_lock:
+                elapsed = time.monotonic() - self._last_embed_time
+                if elapsed < self._min_embed_interval:
+                    time.sleep(self._min_embed_interval - elapsed)
+                self._last_embed_time = time.monotonic()
 
             max_retries = 3
             for attempt in range(max_retries):
