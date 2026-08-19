@@ -78,7 +78,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 6, "x": 6, "y": 15},
             "targets": [
                 {
-                    "expr": "histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le, project_id))",
+                    "expr": "histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le, project_id)) or vector(0)",
                     "legendFormat": "{{project_id}}"
                 }
             ],
@@ -90,7 +90,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 6, "x": 12, "y": 15},
             "targets": [
                 {
-                    "expr": "sum(rate(rag_chunks_retrieved_total_sum[5m])) / sum(rate(rag_chunks_retrieved_total_count[5m])) > 0",
+                    "expr": "(sum(rate(rag_chunks_retrieved_total_sum[5m])) / sum(rate(rag_chunks_retrieved_total_count[5m]))) or vector(0)",
                     "legendFormat": "Chunks"
                 }
             ]
@@ -101,7 +101,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 6, "x": 18, "y": 15},
             "targets": [
                 {
-                    "expr": "sum(rate(rag_retrieval_errors_total[5m])) by (project_id)",
+                    "expr": "sum(rate(rag_retrieval_errors_total[5m])) by (project_id) or vector(0)",
                     "legendFormat": "{{project_id}}"
                 }
             ]
@@ -113,7 +113,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 8, "x": 0, "y": 23},
             "targets": [
                 {
-                    "expr": "sum(rate(rag_generation_tokens_total[5m])) by (backend)",
+                    "expr": "sum(rate(rag_generation_tokens_total[5m])) by (backend) or vector(0)",
                     "legendFormat": "{{backend}}"
                 }
             ]
@@ -124,7 +124,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 8, "x": 8, "y": 23},
             "targets": [
                 {
-                    "expr": "histogram_quantile(0.95, sum(rate(rag_generation_duration_seconds_bucket[5m])) by (le, backend))",
+                    "expr": "histogram_quantile(0.95, sum(rate(rag_generation_duration_seconds_bucket[5m])) by (le, backend)) or vector(0)",
                     "legendFormat": "{{backend}}"
                 }
             ],
@@ -136,7 +136,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 8, "x": 16, "y": 23},
             "targets": [
                 {
-                    "expr": "sum(rate(rag_generation_errors_total[5m])) by (backend)",
+                    "expr": "sum(rate(rag_generation_errors_total[5m])) by (backend) or vector(0)",
                     "legendFormat": "{{backend}}"
                 }
             ]
@@ -148,7 +148,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 12, "x": 0, "y": 31},
             "targets": [
                 {
-                    "expr": "sum(rate(rag_documents_processed_total[5m])) by (project_id)",
+                    "expr": "sum(rate(rag_documents_processed_total[5m])) by (project_id) or vector(0)",
                     "legendFormat": "{{project_id}}"
                 }
             ]
@@ -159,7 +159,7 @@ dashboard = {
             "gridPos": {"h": 8, "w": 12, "x": 12, "y": 31},
             "targets": [
                 {
-                    "expr": "histogram_quantile(0.95, sum(rate(rag_chunking_duration_seconds_bucket[5m])) by (le, strategy))",
+                    "expr": "histogram_quantile(0.95, sum(rate(rag_chunking_duration_seconds_bucket[5m])) by (le, strategy)) or vector(0)",
                     "legendFormat": "{{strategy}}"
                 }
             ],

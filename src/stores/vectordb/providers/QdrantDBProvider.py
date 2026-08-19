@@ -12,11 +12,13 @@ logger = logging.getLogger(__name__)
 class QdrantDBProvider(VectorDBInterface):
 
     def __init__(
-        self, db_path: str = None, db_url: str = None, distance_method: str = None
+        self, db_path: str = None, db_url: str = None,
+        db_api_key: str = None, distance_method: str = None
     ):
         self.client: Optional[QdrantClient] = None
         self.db_path = db_path
         self.db_url = db_url
+        self.db_api_key = db_api_key  # Optional: for secured remote Qdrant servers
         self.distance_method = None
 
         if distance_method == DistanceMethodEnums.COSINE.value:
@@ -32,9 +34,16 @@ class QdrantDBProvider(VectorDBInterface):
     def connect(self):
         try:
             if self.db_url:
-                # Connect to remote Qdrant server
-                self.client = QdrantClient(url=self.db_url)
-                logger.info("Connected to remote Qdrant at %s", self.db_url)
+                # Connect to remote Qdrant server (Docker or Qdrant Cloud)
+                self.client = QdrantClient(
+                    url=self.db_url,
+                    api_key=self.db_api_key or None,  # None = no auth (local Docker)
+                )
+                logger.info(
+                    "Connected to remote Qdrant at %s (auth=%s)",
+                    self.db_url,
+                    "yes" if self.db_api_key else "no",
+                )
             elif self.db_path:
                 # Connect to local Qdrant
                 try:
@@ -262,23 +271,27 @@ class QdrantDBProvider(VectorDBInterface):
         vector: list,
         limit: int = 5,
         semantic_weight: float = 0.6,
+        fetch_limit: int = None,
     ):
-        """Hybrid search using a re-ranking pattern.
+        """Hybrid search using Reciprocal Rank Fusion (RRF).
 
-        1. Semantic search retrieves top-(limit × 4) candidates.
-        2. BM25 re-ranks *only those candidates* (not the full collection).
-        3. Results are combined with a weighted score and top-k returned.
+        1. Semantic search retrieves top-fetch_limit candidates (defaults to limit * 4).
+        2. BM25 scores those candidates.
+        3. RRF combines the semantic and keyword ranks.
+        4. Returns top `limit` results after fusion.
 
-        This avoids the catastrophic O(N) scroll of the old implementation.
+        fetch_limit: override the internal candidate pool size. Pass limit * 5 from the
+        retrieval service to ensure the Reranker sees enough candidates.
         """
         try:
-            fetch_limit = limit * 4
+            # Use explicitly provided fetch_limit, else default to limit * 4
+            candidate_pool = fetch_limit if fetch_limit is not None else limit * 4
 
             # Stage 1: semantic candidates
             semantic_results = self.client.search(
                 collection_name=collection_name,
                 query_vector=vector,
-                limit=fetch_limit,
+                limit=candidate_pool,
             )
 
             if not semantic_results:
@@ -286,27 +299,56 @@ class QdrantDBProvider(VectorDBInterface):
 
             # Stage 2: BM25 re-rank over candidates only
             import re as _re
-            _tok = lambda s: _re.findall(r"[a-z0-9]+", s.lower())
+            # Unicode-aware word tokenization to support Arabic and other languages
+            # with lightweight English stemming for common suffixes (plurals, verb endings)
+            def _tok(s):
+                words = _re.findall(r"(?u)\b\w+\b", s.lower())
+                stemmed = []
+                for w in words:
+                    if len(w) > 4:
+                        if w.endswith('ies'): w = w[:-3] + 'y'
+                        elif w.endswith('es'): w = w[:-2]
+                        elif w.endswith('s') and not w.endswith('ss'): w = w[:-1]
+                        elif w.endswith('ing'): w = w[:-3]
+                        elif w.endswith('ed'): w = w[:-2]
+                    stemmed.append(w)
+                return stemmed
+            
             candidate_texts = [r.payload.get("text", "") for r in semantic_results]
             tokenized_query = _tok(query_text)
             bm25 = BM25Okapi([_tok(t) for t in candidate_texts])
             bm25_scores = bm25.get_scores(tokenized_query)
 
-            max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
+            # Stage 3: Reciprocal Rank Fusion (RRF)
+            k = 60
+            
+            # Sort indices by BM25 score descending to get BM25 ranks
+            bm25_ranked_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)
+            bm25_ranks = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked_indices)}
+            
             keyword_weight = 1.0 - semantic_weight
-
+            
             combined = []
-            for result, bm25_score in zip(semantic_results, bm25_scores):
-                norm_bm25 = bm25_score / max_bm25
-                norm_semantic = float(result.score)
-                combined_score = keyword_weight * norm_bm25 + semantic_weight * norm_semantic
-                combined.append((combined_score, result))
+            for i, result in enumerate(semantic_results):
+                # semantic_results are already sorted by semantic similarity, so their rank is i + 1
+                semantic_rank = i + 1
+                bm25_rank = bm25_ranks[i]
 
-            # Sort descending and take top-k
+                # Apply weights to the RRF formula
+                rrf_score = (semantic_weight * (1.0 / (k + semantic_rank))) + (keyword_weight * (1.0 / (k + bm25_rank)))
+                combined.append((rrf_score, result))
+
+            # Sort descending. Do NOT slice to `limit` here — return the full
+            # candidate pool so the Cohere Reranker sees all candidates.
+            # retrieval_service.py slices to `limit` after reranking via top_n.
             combined.sort(key=lambda x: x[0], reverse=True)
+
+            # Normalize scores to [0, 1] so the top result = 1.0.
+            # This keeps SEARCH_SCORE_THRESHOLD compatible with hybrid results.
+            max_score = combined[0][0] if combined else 1.0
             final = []
-            for score, point in combined[:limit]:
-                point.score = score
+            for score, point in combined:           # ← no [:limit] slice here
+                point.score = round(score / max_score, 4)
                 final.append(point)
 
             return final
@@ -316,3 +358,4 @@ class QdrantDBProvider(VectorDBInterface):
             return self.search_by_vector(
                 collection_name=collection_name, vector=vector, limit=limit
             )
+

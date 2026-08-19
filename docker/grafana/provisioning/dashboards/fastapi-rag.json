@@ -86,7 +86,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le, project_id))",
+          "expr": "histogram_quantile(0.95, sum(rate(rag_retrieval_duration_seconds_bucket[5m])) by (le, project_id)) or vector(0)",
           "legendFormat": "{{project_id}}"
         }
       ],
@@ -107,7 +107,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rag_chunks_retrieved_total_sum[5m])) / sum(rate(rag_chunks_retrieved_total_count[5m])) > 0",
+          "expr": "(sum(rate(rag_chunks_retrieved_total_sum[5m])) / sum(rate(rag_chunks_retrieved_total_count[5m]))) or vector(0)",
           "legendFormat": "Chunks"
         }
       ]
@@ -123,7 +123,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rag_retrieval_errors_total[5m])) by (project_id)",
+          "expr": "sum(rate(rag_retrieval_errors_total[5m])) by (project_id) or vector(0)",
           "legendFormat": "{{project_id}}"
         }
       ]
@@ -139,7 +139,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rag_generation_tokens_total[5m])) by (backend)",
+          "expr": "sum(rate(rag_generation_tokens_total[5m])) by (backend) or vector(0)",
           "legendFormat": "{{backend}}"
         }
       ]
@@ -155,7 +155,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(rag_generation_duration_seconds_bucket[5m])) by (le, backend))",
+          "expr": "histogram_quantile(0.95, sum(rate(rag_generation_duration_seconds_bucket[5m])) by (le, backend)) or vector(0)",
           "legendFormat": "{{backend}}"
         }
       ],
@@ -176,7 +176,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rag_generation_errors_total[5m])) by (backend)",
+          "expr": "sum(rate(rag_generation_errors_total[5m])) by (backend) or vector(0)",
           "legendFormat": "{{backend}}"
         }
       ]
@@ -192,7 +192,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rag_documents_processed_total[5m])) by (project_id)",
+          "expr": "sum(rate(rag_documents_processed_total[5m])) by (project_id) or vector(0)",
           "legendFormat": "{{project_id}}"
         }
       ]
@@ -208,7 +208,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(rag_chunking_duration_seconds_bucket[5m])) by (le, strategy))",
+          "expr": "histogram_quantile(0.95, sum(rate(rag_chunking_duration_seconds_bucket[5m])) by (le, strategy)) or vector(0)",
           "legendFormat": "{{strategy}}"
         }
       ],

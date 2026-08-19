@@ -223,6 +223,7 @@ async def answer_rag(request: Request, search_request: SearchRequest, project_id
             score_threshold=search_request.score_threshold,
             session_id=search_request.session_id,
             metadata_filter=metadata_filter or None,
+            use_cache=search_request.use_cache,
         )
     except ValueError as ve:
         raise HTTPException(
@@ -318,6 +319,7 @@ async def answer_rag_stream(
                         use_hybrid=search_request.use_hybrid,
                         score_threshold=search_request.score_threshold,
                         session_id=search_request.session_id,
+                        use_cache=search_request.use_cache,
                     )
                 except ValueError as ve:
                     yield f"data: {json.dumps({'error': str(ve)})}\n\n"

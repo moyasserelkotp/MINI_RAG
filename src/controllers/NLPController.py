@@ -19,6 +19,7 @@ from utils.metrics import (
     record_generation_error,
     record_cache_hit,
     record_cache_miss,
+    record_generation_tokens,
 )
 
 from services.cache_service import CacheService
@@ -188,6 +189,7 @@ class NLPController(BaseController):
         use_hybrid: bool = True,
         score_threshold: Optional[float] = None,
         metadata_filter: Optional[dict] = None,
+        fetch_limit: Optional[int] = None,
     ):
         collection_name = self.create_collection_name(project_id=project.project_id)
 
@@ -214,12 +216,13 @@ class NLPController(BaseController):
                     vector=vector,
                     limit=limit,
                     semantic_weight=semantic_weight,
+                    fetch_limit=fetch_limit,  # Pass the external fetch_limit through
                 )
             else:
                 results = self.vectordb_client.search_by_vector(
                     collection_name=collection_name,
                     vector=vector,
-                    limit=limit,
+                    limit=fetch_limit or limit,  # Use fetch_limit for pure vector search too
                     score_threshold=threshold if threshold > 0 else None,
                 )
             duration = time.monotonic() - start
@@ -237,13 +240,10 @@ class NLPController(BaseController):
                 logger.exception("Failed to record retrieval error metric")
             return None
 
-        if results is None:
-            return []
-
-        if use_hybrid and threshold and threshold > 0:
-            results = [r for r in results if getattr(r, "score", 0.0) >= threshold]
-
-        return list(results)
+        # NOTE: Score thresholding is now applied inside retrieval_service.py
+        # AFTER the Cohere Reranker runs, so we use the correct score scale.
+        # Do NOT apply a threshold here on the raw hybrid search output.
+        return list(results) if results is not None else []
 
 
     #  Answer 
@@ -258,6 +258,7 @@ class NLPController(BaseController):
         use_rerank: bool = True,
         session_id: Optional[str] = None,
         metadata_filter: Optional[dict] = None,
+        use_cache: Optional[bool] = None,
     ):
         """Run full RAG pipeline and return (answer, full_prompt, chat_history, sources, cached)."""
         answer, full_prompt, chat_history_prompts = None, None, None
@@ -269,7 +270,10 @@ class NLPController(BaseController):
         use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
         use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
         use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
-        use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
+        
+        if use_cache is None:
+            use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
+            
         cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
 
         # 0. Session Initialization
@@ -330,7 +334,16 @@ class NLPController(BaseController):
         )
 
         # 7. Generate Answer
+        gen_start = time.monotonic()
         answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history_prompts)
+        gen_duration = time.monotonic() - gen_start
+        try:
+            backend = getattr(self.generation_client, 'generation_model_id', 'unknown')
+            record_generation_latency(backend=backend, duration=gen_duration)
+            if answer:
+                record_generation_tokens(backend=backend, tokens=int(len(answer) / 4))
+        except Exception:
+            pass
 
         # 8. Post-generation Memory Saves
         if answer:
@@ -493,6 +506,7 @@ class NLPController(BaseController):
             system_prompt = chat_history_prompts[0].get("content", system_prompt)
 
         collected = []
+        gen_start = time.monotonic()
         if hasattr(self.generation_client, "stream_text"):
             try:
                 for token in self.generation_client.stream_text(
@@ -518,6 +532,14 @@ class NLPController(BaseController):
 
         if collected:
             full_text = "".join(collected)
+            try:
+                gen_duration = time.monotonic() - gen_start
+                backend = getattr(self.generation_client, 'generation_model_id', 'unknown')
+                record_generation_latency(backend=backend, duration=gen_duration)
+                record_generation_tokens(backend=backend, tokens=int(len(full_text) / 4))
+            except Exception:
+                pass
+            
             await self._post_generation_memory_saves(
                 session_id=session_id,
                 project=project,

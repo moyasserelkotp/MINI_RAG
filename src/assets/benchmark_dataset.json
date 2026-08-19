@@ -1,0 +1,50 @@
+[
+  {
+    "question": "How do I book an appointment?",
+    "ground_truth": "You can book an appointment through the online portal, mobile app, call center, walk-in, or via WhatsApp.",
+    "keywords": ["portal", "app", "call center", "walk-in", "WhatsApp"],
+    "is_negative": false
+  },
+  {
+    "question": "What is the consultation fee for cardiology?",
+    "ground_truth": "The consultation fee for cardiology is 350 SAR for self-pay patients.",
+    "keywords": ["350", "Cardiology"],
+    "is_negative": false
+  },
+  {
+    "question": "Does HealthPlus have a cancer treatment program?",
+    "ground_truth": "Yes, HealthPlus has a cancer treatment program that offers multidisciplinary tumor board consultations, chemotherapy, targeted therapy, immunotherapy, and radiation oncology services.",
+    "keywords": ["cancer", "chemotherapy", "radiation"],
+    "is_negative": false
+  },
+  {
+    "question": "How long does an MRI result take?",
+    "ground_truth": "MRI results are available on the same day at the main centers.",
+    "keywords": ["Same day", "MRI"],
+    "is_negative": false
+  },
+  {
+    "question": "What is the cancellation policy?",
+    "ground_truth": "Cancellations must be made at least 4 hours before the appointment to avoid a SAR 50 no-show fee.",
+    "keywords": ["4 hours", "50", "cancellation"],
+    "is_negative": false
+  },
+  {
+    "question": "Do you treat mental health conditions?",
+    "ground_truth": "Yes, HealthPlus provides mental health services including psychiatry, clinical psychology, counseling, and treats conditions like depression, anxiety, PTSD, OCD, ADHD, and substance use disorders.",
+    "keywords": ["psychiatry", "depression", "anxiety", "ADHD"],
+    "is_negative": false
+  },
+  {
+    "question": "What is the fee for veterinary services for my dog?",
+    "ground_truth": "I cannot find the answer to that question in the provided documents.",
+    "keywords": [],
+    "is_negative": true
+  },
+  {
+    "question": "Does HealthPlus offer helicopter ambulance transport?",
+    "ground_truth": "I cannot find the answer to that question in the provided documents.",
+    "keywords": [],
+    "is_negative": true
+  }
+]

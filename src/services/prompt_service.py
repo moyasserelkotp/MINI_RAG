@@ -28,12 +28,15 @@ class PromptService:
         document_parts = []
         for idx, doc in enumerate(retrieved_documents or []):
             chunk_text = doc.payload.get("text", "")
-            doc_metadata = doc.payload.get("metadata", {})
-            source = doc_metadata.get("source", "unknown") if doc_metadata else "unknown"
+            doc_metadata = doc.payload.get("metadata", {}) or {}
+            source = doc_metadata.get("source", "unknown")
+            # Include section label if available for better LLM grounding context
+            section = doc_metadata.get("section", "—")
             score = round(getattr(doc, "score", 0.0), 4)
 
             doc_prompt = self.template_parser.get(
-                "rag", "document_prompt", {"doc_num": idx + 1, "chunk_text": chunk_text, "source": source, "score": score}
+                "rag", "document_prompt",
+                {"doc_num": idx + 1, "chunk_text": chunk_text, "source": source, "score": score, "section": section}
             )
             document_parts.append(doc_prompt)
 

@@ -40,3 +40,4 @@ pytest-mock==3.14.0
 ragas==0.1.9
 datasets==2.19.0
 streamlit==1.35.0
+langchain-cohere==0.1.5

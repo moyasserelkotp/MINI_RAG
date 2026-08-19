@@ -227,6 +227,7 @@ class ChromaDBProvider(VectorDBInterface):
         limit: int = 5,
         semantic_weight: float = 0.6,
     ):
+        """Hybrid search using Reciprocal Rank Fusion (RRF)."""
         try:
             fetch_limit = limit * 4
             semantic_results = self.search_by_vector(collection_name, vector, fetch_limit)
@@ -234,32 +235,35 @@ class ChromaDBProvider(VectorDBInterface):
             if not semantic_results:
                 return []
 
+            import re as _re
+            _tok = lambda s: _re.findall(r"(?u)\b\w+\b", s.lower())
+
             candidate_texts = [r.payload.get("text", "") for r in semantic_results]
-            tokenized_query = query_text.lower().split()
-            bm25 = BM25Okapi([t.lower().split() for t in candidate_texts])
+            tokenized_query = _tok(query_text)
+            bm25 = BM25Okapi([_tok(t) for t in candidate_texts])
             bm25_scores = bm25.get_scores(tokenized_query)
 
-            max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
+            k = 60
+            bm25_ranked_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)
+            bm25_ranks = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked_indices)}
+            
             keyword_weight = 1.0 - semantic_weight
-
+            
             combined = []
-            for result, bm25_score in zip(semantic_results, bm25_scores):
-                norm_bm25 = bm25_score / max_bm25
+            for i, result in enumerate(semantic_results):
+                semantic_rank = i + 1
+                bm25_rank = bm25_ranks[i]
                 
-                # Chroma distance: lower is better for cosine distance. 
-                # To combine with bm25 (higher is better), we need to invert chroma distance
-                # Cosine distance ranges [0, 2], so similarity = 1 - (dist / 2)
-                sim = 1.0 - min(result.score / 2.0, 1.0) if self.distance_method == "cosine" else 1.0 / (1.0 + result.score)
-                norm_semantic = sim
-
-                combined_score = keyword_weight * norm_bm25 + semantic_weight * norm_semantic
-                combined.append((combined_score, result))
+                rrf_score = (semantic_weight * (1.0 / (k + semantic_rank))) + (keyword_weight * (1.0 / (k + bm25_rank)))
+                combined.append((rrf_score, result))
 
             combined.sort(key=lambda x: x[0], reverse=True)
+            
+            # Normalize to [0, 1] so top result = 1.0 (keeps SEARCH_SCORE_THRESHOLD compatible)
+            max_score = combined[0][0] if combined else 1.0
             final = []
             for score, point in combined[:limit]:
-                # replace score with the combined one, as other providers do
-                point.score = score
+                point.score = round(score / max_score, 4)
                 final.append(point)
 
             return final

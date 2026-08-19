@@ -40,6 +40,14 @@ class SearchRequest(BaseModel):
 - **`false`**: Uses pure Dense Vector Search. Best for abstract, purely conceptual queries where exact keyword matching is unnecessary.""",
         examples=[True]
     )
+    use_cache: Optional[bool] = Field(
+        None,
+        description="""Toggle semantic caching for this specific request. 
+- **`true`**: Force cache usage.
+- **`false`**: Force cache bypass (useful for evaluation/testing).
+- **`null` (Default)**: Uses the global app setting.""",
+        examples=[False]
+    )
     session_id: Optional[str] = Field(
         None, 
         max_length=128,

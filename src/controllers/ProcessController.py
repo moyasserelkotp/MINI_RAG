@@ -78,8 +78,13 @@ class ProcessController(BaseController):
             elif chunk_strategy == "overlapping":
                 text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size, separator="")
             else:
-                # FIX: RecursiveCharacterTextSplitter already imported at top of file
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size, length_function=len)
+                # Use explicit separators to avoid mid-word/mid-sentence cuts
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=chunk_size, 
+                    chunk_overlap=overlap_size, 
+                    length_function=len,
+                    separators=["\n\n\n", "\n\n", "\n", ".", "?", "!", " "]
+                )
 
         elif chunk_strategy == "semantic":
             from langchain_experimental.text_splitter import SemanticChunker
@@ -119,7 +124,12 @@ class ProcessController(BaseController):
                 text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size, separator=".")
 
         else:
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap_size, length_function=len)
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size, 
+                chunk_overlap=overlap_size, 
+                length_function=len,
+                separators=["\n\n\n", "\n\n", "\n", ".", "?", "!", " "]
+            )
 
         # MarkdownHeaderTextSplitter requires individual splits on strings rather than document list creation directly
         if chunk_strategy == "document_structure":
@@ -151,6 +161,30 @@ class ProcessController(BaseController):
             file_content_texts,
             metadatas=file_content_metadata
         )
+
+        current_section = "General Information"
+        for idx, chunk in enumerate(chunks):
+            # Basic heuristic to track sections across chunks
+            lines = chunk.page_content.strip().split('\n')
+            if lines:
+                first_line = lines[0].strip()
+                if (
+                    first_line 
+                    and len(first_line) < 80 
+                    and not first_line.endswith('.') 
+                    and not first_line.endswith(',')
+                    and (first_line.istitle() or first_line.isupper())
+                ):
+                    current_section = first_line
+
+            chunk.metadata['chunk_index'] = idx
+            chunk.metadata['section'] = current_section
+            
+            # Simple content type tagging
+            if ' SAR' in chunk.page_content or '—' in chunk.page_content:
+                chunk.metadata['content_type'] = 'structured_data'
+            else:
+                chunk.metadata['content_type'] = 'text'
 
         return chunks
 

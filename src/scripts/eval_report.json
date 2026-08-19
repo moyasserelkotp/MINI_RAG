@@ -1,0 +1,124 @@
+[
+    {
+        "question": "How do I book an appointment?",
+        "expected_ground_truth": "You can book an appointment through the online portal, mobile app, call center, walk-in, or via WhatsApp.",
+        "rag_generated_answer": "You can book an appointment through the following channels:\n\n- **Online Portal:** www.healthplus.com.sa/book (available 24/7)  \n- **Mobile App:** HealthPlus App (iOS & Android) \u2014 download free from App Store / Google Play  \n- **Call Center:** 920-033-000 (available Saturday to Thursday, 7 AM to 10 PM)  \n- **Walk-in:** Accepted at all branches (scheduled patients are seen first)  \n- **WhatsApp Booking:** +966 50 000 1234 (send your name, specialty, and preferred date)",
+        "retrieved_contexts": [
+            "cheduling appointments. Patients can book\nonline, via the mobile app, by calling our contact center, or by visiting any branch. Emergency\nservices are available 24/7 at our main hospital branches.\n\u2022 Online Portal: www.healthplus.com.sa/book \u2014 available 24/7\n\u2022 Mobile App: HealthPlus App (iOS & Androi",
+            "onths.\n\nMental Health & Wellbeing Services\n\n\nHealthPlus provides confidential mental health services including psychiatry, clinical psychology, and\ncounseling. We treat depression, anxiety disorders, PTSD, OCD, ADHD, and substance use\ndisorders. Telepsychiatry appointments are available for patients",
+            "heduled patients are seen first\n\u2022 WhatsApp Booking: +966 50 000 1234 \u2014 send your name, specialty, and preferred date\nCancellations must be made at least 4 hours before the appointment to avoid a SAR 50 no-show fee.\nRescheduling is free and can be done through any booking channel.\n\n7. Frequently Aske"
+        ],
+        "context_scores": [
+            0.9982,
+            0.5318,
+            0.4226
+        ],
+        "context_recall": 1.0,
+        "is_negative": false,
+        "anti_hallucination_pass": null
+    },
+    {
+        "question": "What is the consultation fee for cardiology?",
+        "expected_ground_truth": "The consultation fee for cardiology is 350 SAR for self-pay patients.",
+        "rag_generated_answer": "The consultation fee for Cardiology is 350 SAR for self-pay patients.",
+        "retrieved_contexts": [
+            "alty\n\nConsultation Fee (SAR)\nThe consultation fee for General Practice is 150 SAR for self-pay patients.\nThe consultation fee for Internal Medicine is 250 SAR for self-pay patients.\nThe consultation fee for Cardiology is 350 SAR for self-pay patients.\nThe consultation fee for Orthopedics is 300 SAR ",
+            "y patients.\nThe consultation fee for Pediatrics is 200 SAR for self-pay patients.\nThe consultation fee for Dermatology is 280 SAR for self-pay patients.\nThe consultation fee for Ophthalmology is 250 SAR for self-pay patients.\n\n5. Patient Wellness & Chronic Disease Programs\n\nDiabetes Management Progr"
+        ],
+        "context_scores": [
+            0.9984,
+            0.301
+        ],
+        "context_recall": 1.0,
+        "is_negative": false,
+        "anti_hallucination_pass": null
+    },
+    {
+        "question": "Does HealthPlus have a cancer treatment program?",
+        "expected_ground_truth": "Yes, HealthPlus has a cancer treatment program that offers multidisciplinary tumor board consultations, chemotherapy, targeted therapy, immunotherapy, and radiation oncology services.",
+        "rag_generated_answer": "Yes, HealthPlus has a cancer treatment program. The HealthPlus Cancer Center offers multidisciplinary tumor board consultations, chemotherapy, targeted therapy, immunotherapy, and radiation oncology services. They are also affiliated with international cancer research networks, providing patients access to clinical trials and cutting-edge treatments.",
+        "retrieved_contexts": [
+            "erves\n\n\nathletes of all levels, offering physiotherapy, rehabilitation, and performance optimization programs.\n\nOncology & Cancer Care\n\nThe HealthPlus Cancer Center offers multidisciplinary tumor board consultations, chemotherapy,\ntargeted therapy, immunotherapy, and radiation oncology services. We ",
+            "ns available?\nA: Yes. HealthPlus Second Opinion Clinic is available for oncology, cardiac surgery, and\nneurosurgery cases. International second opinions can also be arranged through our partnerships\nwith Mayo Clinic and Cleveland Clinic.\nQ: What is the policy for pediatric patients?\nA: Children unde",
+            "t.\nQ: Is my medical data kept private?\n\n\nA: All patient data is stored on encrypted servers in compliance with Saudi PDPL regulations.\nHealthPlus does not share personal health information with third parties without explicit consent.\nQ: Does HealthPlus have a loyalty program?\nA: Yes. The HealthPlus+"
+        ],
+        "context_scores": [
+            0.9992,
+            0.9708,
+            0.5749
+        ],
+        "context_recall": 1.0,
+        "is_negative": false,
+        "anti_hallucination_pass": null
+    },
+    {
+        "question": "How long does an MRI result take?",
+        "expected_ground_truth": "MRI results are available on the same day at the main centers.",
+        "rag_generated_answer": "The turnaround time for MRI (1.5T & 3T) is same day and available at main centers.",
+        "retrieved_contexts": [
+            "laboratories and imaging centers at all major branches. Most\nroutine blood tests are reported within 4 hours. Specialized tests are processed at our central\nreference laboratory with same-day or next-day reporting.\n\nService\n\nTurnaround Time\n\nAvailable At\n\nComplete Blood Count (CBC)\n2 hours\nAll branc",
+            "RI (1.5T & 3T) is same day and available at main centers.\nThe turnaround time for CT Scan (64-slice) is 1 hour and available at main centers.\nThe turnaround time for Digital X-Ray is 30 minutes and available at all branches.\nThe turnaround time for Ultrasound is same appointment and available at all"
+        ],
+        "context_scores": [
+            0.6796,
+            0.1916
+        ],
+        "context_recall": 1.0,
+        "is_negative": false,
+        "anti_hallucination_pass": null
+    },
+    {
+        "question": "What is the cancellation policy?",
+        "expected_ground_truth": "Cancellations must be made at least 4 hours before the appointment to avoid a SAR 50 no-show fee.",
+        "rag_generated_answer": "NO_CONTEXT",
+        "retrieved_contexts": [],
+        "context_scores": [],
+        "context_recall": 0.0,
+        "is_negative": false,
+        "anti_hallucination_pass": null
+    },
+    {
+        "question": "Do you treat mental health conditions?",
+        "expected_ground_truth": "Yes, HealthPlus provides mental health services including psychiatry, clinical psychology, counseling, and treats conditions like depression, anxiety, PTSD, OCD, ADHD, and substance use disorders.",
+        "rag_generated_answer": "Yes, HealthPlus provides confidential mental health services including psychiatry, clinical psychology, and counseling. We treat depression, anxiety disorders, PTSD, OCD, ADHD, and substance use disorders.",
+        "retrieved_contexts": [
+            "onths.\n\nMental Health & Wellbeing Services\n\n\nHealthPlus provides confidential mental health services including psychiatry, clinical psychology, and\ncounseling. We treat depression, anxiety disorders, PTSD, OCD, ADHD, and substance use\ndisorders. Telepsychiatry appointments are available for patients",
+            "ns available?\nA: Yes. HealthPlus Second Opinion Clinic is available for oncology, cardiac surgery, and\nneurosurgery cases. International second opinions can also be arranged through our partnerships\nwith Mayo Clinic and Cleveland Clinic.\nQ: What is the policy for pediatric patients?\nA: Children unde"
+        ],
+        "context_scores": [
+            0.9414,
+            0.1312
+        ],
+        "context_recall": 1.0,
+        "is_negative": false,
+        "anti_hallucination_pass": null
+    },
+    {
+        "question": "What is the fee for veterinary services for my dog?",
+        "expected_ground_truth": "I cannot find the answer to that question in the provided documents.",
+        "rag_generated_answer": "NO_CONTEXT",
+        "retrieved_contexts": [],
+        "context_scores": [],
+        "context_recall": 1.0,
+        "is_negative": true,
+        "anti_hallucination_pass": false
+    },
+    {
+        "question": "Does HealthPlus offer helicopter ambulance transport?",
+        "expected_ground_truth": "I cannot find the answer to that question in the provided documents.",
+        "rag_generated_answer": "I cannot find the answer to that question in the provided documents.",
+        "retrieved_contexts": [
+            "sults relevant to your visit.\nQ: Does HealthPlus offer home visits?\nA: Yes. HealthPlus Home Health services are available in Riyadh, Jeddah, and Dammam for\npost-operative care, elderly patients, and chronic disease management. Book via the app or call\ncenter.\nQ: How long does a referral to a special",
+            "2. Medical Services & Specialties\n\nHealthPlus offers a comprehensive range of outpatient and inpatient medical services across 20+\nspecialties. Our integrated care model ensures seamless coordination between departments to\nprovide patients with a complete, continuous care experience.\n\nPrimary Care &",
+            "onths.\n\nMental Health & Wellbeing Services\n\n\nHealthPlus provides confidential mental health services including psychiatry, clinical psychology, and\ncounseling. We treat depression, anxiety disorders, PTSD, OCD, ADHD, and substance use\ndisorders. Telepsychiatry appointments are available for patients"
+        ],
+        "context_scores": [
+            0.5196,
+            0.1301,
+            0.0842
+        ],
+        "context_recall": 1.0,
+        "is_negative": true,
+        "anti_hallucination_pass": true
+    }
+]
