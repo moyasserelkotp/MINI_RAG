@@ -1,118 +1,101 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from contextlib import asynccontextmanager
 from motor.motor_asyncio import AsyncIOMotorClient
-from stores.llm.LLMProviderFactory import LLMProviderFactory
-from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
-from stores.llm.templates.template_parser import TemplateParser
-from helpers.config import get_settings
-from routes import base, data, nlp
-from routes.projects import projects_router
-from routes.tasks import tasks_router
-from routes.projects import project_alias_router
-from routes.sessions import sessions_router
-from routes.eval import eval_router
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
-from starlette.middleware.base import BaseHTTPMiddleware
-from middleware.auth import api_key_middleware
-from middleware.request_id import RequestIDMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from helpers.config import get_settings
+from middleware.auth import api_key_middleware
 from middleware.rate_limiter import limiter
+from middleware.request_id import RequestIDMiddleware
+from routes import base, data, nlp
+from routes.eval import eval_router
+from routes.projects import project_alias_router, projects_router
+from routes.sessions import sessions_router
+from routes.tasks import tasks_router
+from stores.llm.LLMProviderFactory import LLMProviderFactory
+from stores.llm.templates.template_parser import TemplateParser
+from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
+from utils.metrics import add_prometheus_middleware, register_metrics_endpoint
 
-import logging
-
-#  Configure logging based on settings 
+#  Logging 
 settings = get_settings()
 
-# Convert string log level to logging level
-log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
-
 logging.basicConfig(
-    level=log_level,
+    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
-# Log startup information
-logger.info("=" * 70)
-logger.info("Starting MINI-RAG Application")
-logger.info("=" * 70)
 if settings.DEBUG:
-    logger.warning("DEBUG MODE ENABLED - Only use this for development!")
-logger.info("Log Level: %s", settings.LOG_LEVEL)
+    logger.warning("DEBUG MODE ENABLED — do not use in production!")
 
-
+#  Lifespan (startup / shutdown) 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    #  Startup 
-    settings = get_settings()
-    logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
+    """Initialise all shared resources once at startup; clean up on shutdown."""
+    _settings = get_settings()
+    logger.info("Starting %s v%s", _settings.APP_NAME, _settings.APP_VERSION)
 
     # MongoDB
-    app.mongo_conn = AsyncIOMotorClient(settings.MONGODB_URL)
-    app.db_client = app.mongo_conn[settings.MONGODB_DATABASE]
-    logger.info("MongoDB connected: %s", settings.MONGODB_DATABASE)
+    app.mongo_conn = AsyncIOMotorClient(_settings.MONGODB_URL)
+    app.db_client = app.mongo_conn[_settings.MONGODB_DATABASE]
+    logger.info("MongoDB connected: %s", _settings.MONGODB_DATABASE)
 
-    # LLM factory
-    llm_factory = LLMProviderFactory(settings)
-    vectordb_factory = VectorDBProviderFactory(settings)
+    # LLM clients
+    llm_factory = LLMProviderFactory(_settings)
 
-    # Generation client
-    app.generation_client = llm_factory.create(provider=settings.GENERATION_BACKEND)
-    app.generation_client.set_generation_model(model_id=settings.GENERATION_MODEL_ID)
-    logger.info("Generation backend: %s / %s", settings.GENERATION_BACKEND, settings.GENERATION_MODEL_ID)
+    app.generation_client = llm_factory.create(provider=_settings.GENERATION_BACKEND)
+    app.generation_client.set_generation_model(model_id=_settings.GENERATION_MODEL_ID)
+    logger.info("Generation: %s / %s", _settings.GENERATION_BACKEND, _settings.GENERATION_MODEL_ID)
 
-    # Embedding client
-    app.embedding_client = llm_factory.create(provider=settings.EMBEDDING_BACKEND)
+    app.embedding_client = llm_factory.create(provider=_settings.EMBEDDING_BACKEND)
     app.embedding_client.set_embedding_model(
-        model_id=settings.EMBEDDING_MODEL_ID,
-        embedding_size=settings.EMBEDDING_MODEL_SIZE,
+        model_id=_settings.EMBEDDING_MODEL_ID,
+        embedding_size=_settings.EMBEDDING_MODEL_SIZE,
     )
-    logger.info("Embedding backend: %s / %s (dim=%s)", settings.EMBEDDING_BACKEND, settings.EMBEDDING_MODEL_ID, settings.EMBEDDING_MODEL_SIZE)
+    logger.info(
+        "Embedding: %s / %s (dim=%s)",
+        _settings.EMBEDDING_BACKEND, _settings.EMBEDDING_MODEL_ID, _settings.EMBEDDING_MODEL_SIZE,
+    )
 
     # Vector DB
-    app.vectordb_client = vectordb_factory.create(provider=settings.VECTOR_DB_BACKEND)
+    app.vectordb_client = VectorDBProviderFactory(_settings).create(provider=_settings.VECTOR_DB_BACKEND)
     app.vectordb_client.connect()
-    logger.info("VectorDB connected: %s", settings.VECTOR_DB_BACKEND)
+    logger.info("VectorDB: %s", _settings.VECTOR_DB_BACKEND)
 
     # Template parser
     app.template_parser = TemplateParser(
-        language=settings.PRIMARY_LANG,
-        default_language=settings.DEFAULT_LANG,
+        language=_settings.PRIMARY_LANG,
+        default_language=_settings.DEFAULT_LANG,
     )
-    logger.info("Template parser ready (lang=%s)", settings.PRIMARY_LANG)
 
-    # Cohere rerank client (optional) — instantiated once to avoid per-request overhead
+    # Cohere rerank client
     app.cohere_client = None
-    if getattr(settings, "USE_RERANK", False):
-        cohere_key = getattr(settings, "COHERE_API_KEY", None)
-        if cohere_key:
-            try:
-                import cohere as _cohere
-                app.cohere_client = _cohere.Client(cohere_key)
-                logger.info("Cohere rerank client initialised")
-            except Exception as exc:
-                logger.warning("Could not initialise Cohere client: %s", exc)
+    if _settings.USE_RERANK and _settings.COHERE_API_KEY:
+        try:
+            import cohere as _cohere
+            app.cohere_client = _cohere.Client(_settings.COHERE_API_KEY)
+            logger.info("Cohere rerank client initialised")
+        except Exception as exc:
+            logger.warning("Could not initialise Cohere client: %s", exc)
 
-    # Shared state — avoids re-creating per-request objects
-    # initialized_collections: tracks which Qdrant collections already exist so
-    #   we skip the is_collection_existed() round-trip on every request.
+    # Shared per-worker state
+    # initialized_collections — skips Qdrant round-trip after first request
     app.initialized_collections = set()
-
-    # llm_semaphore: caps simultaneous Cohere API calls to avoid hitting the
-    #   API rate limit when many users send requests at the same time.
-    #   10 concurrent calls is a safe default for Cohere's production tier.
+    # llm_semaphore — caps concurrent LLM API calls to avoid provider rate limits
     app.llm_semaphore = asyncio.Semaphore(10)
 
     logger.info("Startup complete — ready to serve requests.")
-
     yield
 
-    #  Shutdown 
+    # Shutdown
     logger.info("Shutting down…")
     app.mongo_conn.close()
     try:
@@ -122,111 +105,76 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete.")
 
 
-openapi_tags = [
-    {
-        "name": "General",
-        "description": "Base routes and health checks.",
-    },
-    {
-        "name": "Projects",
-        "description": "Manage user projects.",
-    },
-    {
-        "name": "Data Management",
-        "description": "Upload and manage project data.",
-    },
-    {
-        "name": "Search & NLP",
-        "description": "Query vectors and generate answers.",
-    },
-    {
-        "name": "Background Tasks",
-        "description": "Trigger and monitor long-running background tasks.",
-    },
-    {
-        "name": "Sessions",
-        "description": "Manage chat sessions and message history.",
-    },
-    {
-        "name": "Evaluation",
-        "description": "RAG evaluation endpoints.",
-    },
+#  OpenAPI metadata
+_OPENAPI_TAGS = [
+    {"name": "General",          "description": "Base routes and health checks."},
+    {"name": "Projects",         "description": "Manage user projects."},
+    {"name": "Data Management",  "description": "Upload and manage project data."},
+    {"name": "Search & NLP",     "description": "Query vectors and generate answers."},
+    {"name": "Background Tasks", "description": "Trigger and monitor long-running background tasks."},
+    {"name": "Sessions",         "description": "Manage chat sessions and message history."},
+    {"name": "Evaluation",       "description": "RAG evaluation endpoints."},
 ]
 
+#  Application 
 app = FastAPI(
     title="MINI-RAG",
     description=(
         "Production-grade Retrieval-Augmented Generation API. "
-        "Transforms static documents of any domain into an intelligent, context-aware AI expert "
-        "with semantic memory, multilingual reasoning (Arabic + English), "
-        "and enterprise-grade observability."
+        "Transforms static documents of any domain into an intelligent, "
+        "context-aware AI expert with semantic memory, multilingual reasoning "
+        "(Arabic + English), and enterprise-grade observability."
     ),
     version="1.0.0",
-    contact={
-        "name": "MINI-RAG",
-        "url": "https://github.com/your-org/mini-rag",
-    },
-    license_info={
-        "name": "MIT",
-        "url": "https://opensource.org/licenses/MIT",
-    },
+    contact={"name": "MINI-RAG", "url": "https://github.com/your-org/mini-rag"},
+    license_info={"name": "MIT", "url": "https://opensource.org/licenses/MIT"},
     lifespan=lifespan,
     debug=settings.DEBUG,
-    openapi_tags=openapi_tags,
+    openapi_tags=_OPENAPI_TAGS,
     swagger_ui_parameters={"operationsSorter": "method"},
-    # Disable interactive docs in production; enable only when DEBUG=True.
+    # Docs are disabled in production
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
     openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
-# Store settings in app state for access in routes
-app.state.DEBUG = settings.DEBUG
-app.state.LOG_LEVEL = settings.LOG_LEVEL
+#  Middleware (registration order matters — last added = outermost) 
 
-#  Rate Limiter 
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-logger.info("Rate limiter initialised (global=%s)", settings.RATE_LIMIT_GLOBAL)
-
-if settings.DEBUG:
-    logger.warning("⚠️  FastAPI DEBUG MODE ENABLED ⚠️ ")
-    logger.warning("This should ONLY be used for development!")
-    logger.warning("Sensitive information may be exposed in error messages.")
-
-# Add Prometheus middleware BEFORE the app starts
-# This must happen before any requests are processed
+# 1. Prometheus — must be first so it captures all requests
 try:
     add_prometheus_middleware(app)
-    logger.info("Prometheus middleware registered")
-except Exception as e:
-    logger.exception("Failed to register Prometheus middleware: %s", e)
+except Exception as exc:
+    logger.exception("Failed to register Prometheus middleware: %s", exc)
 
-# Auth Middleware 
-# Runs BEFORE CORS — all requests pass through API key validation first
+# 2. Auth — validates API key before anything else reaches the route
 app.add_middleware(BaseHTTPMiddleware, dispatch=api_key_middleware)
 if settings.ENABLE_AUTH:
     logger.info("API key auth ENABLED (%d key(s) configured)", len(settings.API_KEYS))
 else:
-    logger.warning("⚠️  AUTHENTICATION IS DISABLED — set ENABLE_AUTH=True in production")
+    logger.warning("⚠️  Authentication is DISABLED — enable in production")
 
-# Request-ID middleware — attaches X-Request-ID to every request/response
+# 3. Request-ID — attaches X-Request-ID to every request/response
 app.add_middleware(RequestIDMiddleware)
 
-# CORS — origins controlled via CORS_ALLOWED_ORIGINS in settings / .env
-cors_origins = get_settings().CORS_ALLOWED_ORIGINS
-if not settings.DEBUG and cors_origins == ["*"]:
-    logger.error("CORS wildcard '*' is not allowed in production. Defaulting to empty list.")
-    cors_origins = []
+# 4. CORS
+_cors_origins = settings.CORS_ALLOWED_ORIGINS
+if not settings.DEBUG and _cors_origins == ["*"]:
+    logger.error("CORS wildcard '*' is not allowed in production. Defaulting to [].")
+    _cors_origins = []
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 5. Rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+#  Routers 
 app.include_router(base.base_router)
 app.include_router(data.data_router)
 app.include_router(nlp.nlp_router)
@@ -236,9 +184,19 @@ app.include_router(tasks_router)
 app.include_router(sessions_router)
 app.include_router(eval_router)
 
-# Register the /metrics endpoint after middleware is set up
+#  Prometheus metrics endpoint 
 try:
     register_metrics_endpoint(app)
-    logger.info("Prometheus /metrics endpoint registered")
-except Exception as e:
-    logger.exception("Failed to register /metrics endpoint: %s", e)
+except Exception as exc:
+    logger.exception("Failed to register /metrics endpoint: %s", exc)
+
+
+"""
+MINI-RAG — Application entry point.
+
+Responsibilities:
+  - Configure logging
+  - Define the FastAPI lifespan (startup / shutdown)
+  - Register middleware (auth, CORS, rate-limit, request-ID, Prometheus)
+  - Mount all routers
+"""
