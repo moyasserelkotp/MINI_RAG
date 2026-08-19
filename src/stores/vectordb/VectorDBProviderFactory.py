@@ -22,6 +22,7 @@ class VectorDBProviderFactory:
             return QdrantDBProvider(
                 db_path=db_path,
                 db_url=db_url,
+                db_api_key=getattr(self.config, "VECTOR_DB_API_KEY", None),
                 distance_method=self.config.VECTOR_DB_DISTANCE_METHOD,
             )
         elif provider == VectorDBEnums.FAISS.value:

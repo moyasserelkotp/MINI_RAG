@@ -31,6 +31,9 @@ def _make_nlp_controller(request: Request) -> NLPController:
         embedding_client=request.app.embedding_client,
         template_parser=request.app.template_parser,
         cohere_client=getattr(request.app, "cohere_client", None),
+        # Shared across all requests in this worker — see main.py lifespan
+        initialized_collections=request.app.initialized_collections,
+        llm_semaphore=request.app.llm_semaphore,
     )
 
 

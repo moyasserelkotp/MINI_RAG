@@ -48,7 +48,12 @@ def _safe_task_callback(label: str):
 
 class NLPController(BaseController):
 
-    def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser, cohere_client=None):
+    def __init__(
+        self, db_client, vectordb_client, generation_client, embedding_client,
+        template_parser, cohere_client=None,
+        initialized_collections: set = None,
+        llm_semaphore: asyncio.Semaphore = None,
+    ):
         super().__init__()
         self.db_client = db_client
         self.vectordb_client = vectordb_client
@@ -56,7 +61,15 @@ class NLPController(BaseController):
         self.embedding_client = embedding_client
         self.template_parser = template_parser
         self.cohere_client = cohere_client
-        self._initialized_collections: set = set()
+
+        # Use the shared process-level set when provided (passed from app state).
+        # Fall back to a fresh set only when called outside of a request context
+        # (e.g. tests, CLI scripts) so the class stays independently usable.
+        self._initialized_collections: set = initialized_collections if initialized_collections is not None else set()
+
+        # Semaphore that caps simultaneous LLM API calls across all concurrent
+        # requests in this worker. Falls back to a permissive local semaphore.
+        self._llm_semaphore: asyncio.Semaphore = llm_semaphore if llm_semaphore is not None else asyncio.Semaphore(50)
 
         self.cache_service = CacheService(
             vectordb_client, embedding_client, generation_client, self.app_settings, self._initialized_collections
@@ -333,9 +346,11 @@ class NLPController(BaseController):
             query, session_obj, session_messages, entities_text, retrieved_documents, use_summary, use_entity, use_window
         )
 
-        # 7. Generate Answer
+        # 7. Generate Answer — guarded by the shared semaphore to cap simultaneous
+        #    Cohere API calls and avoid hitting the provider's rate limit.
         gen_start = time.monotonic()
-        answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history_prompts)
+        async with self._llm_semaphore:
+            answer = await asyncio.to_thread(self.generation_client.generate_text, prompt=full_prompt, chat_history=chat_history_prompts)
         gen_duration = time.monotonic() - gen_start
         try:
             backend = getattr(self.generation_client, 'generation_model_id', 'unknown')

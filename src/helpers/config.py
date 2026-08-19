@@ -97,8 +97,9 @@ class Settings(BaseSettings):
 
     #  Vector DB 
     VECTOR_DB_BACKEND: str
-    VECTOR_DB_URL: Optional[str] = None
-    VECTOR_DB_PATH: str = "qdrant_db"
+    VECTOR_DB_URL: Optional[str] = None          # Set to http://localhost:6333 for Docker/server mode
+    VECTOR_DB_API_KEY: Optional[str] = None       # Only needed for Qdrant Cloud or secured servers
+    VECTOR_DB_PATH: str = "qdrant_db"             # Used only when VECTOR_DB_URL is not set (local mode)
     VECTOR_DB_DISTANCE_METHOD: Optional[str] = "cosine"
     VECTOR_DB_COLLECTION_PREFIX: str = "collection"
     PINECONE_API_KEY: Optional[str] = None

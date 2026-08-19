@@ -98,6 +98,16 @@ async def lifespan(app: FastAPI):
             except Exception as exc:
                 logger.warning("Could not initialise Cohere client: %s", exc)
 
+    # Shared state — avoids re-creating per-request objects
+    # initialized_collections: tracks which Qdrant collections already exist so
+    #   we skip the is_collection_existed() round-trip on every request.
+    app.initialized_collections = set()
+
+    # llm_semaphore: caps simultaneous Cohere API calls to avoid hitting the
+    #   API rate limit when many users send requests at the same time.
+    #   10 concurrent calls is a safe default for Cohere's production tier.
+    app.llm_semaphore = asyncio.Semaphore(10)
+
     logger.info("Startup complete — ready to serve requests.")
 
     yield
