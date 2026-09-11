@@ -12,11 +12,19 @@ class RetrievalEvaluator:
         self.score_threshold = score_threshold
         self._settings = get_settings()
 
-    async def evaluate(self, query: str, retrieved_context: list) -> dict:
+    async def evaluate(self, query: str, retrieved_context: list, query_category: str = None) -> dict:
         """
         Determines if the retrieved context is sufficient to answer the query.
         Returns a dict with 'is_sufficient' (bool), 'reason' (str), and 'action' (str).
         """
+        # Fast-pass web search results directly to Answer node
+        if query_category == "WEB_SEARCH":
+            return {
+                "is_sufficient": True,
+                "reason": "Web search results are passed directly to answer generation.",
+                "action": "ANSWER"
+            }
+
         if not retrieved_context:
             return {
                 "is_sufficient": False,

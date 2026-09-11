@@ -5,10 +5,11 @@ from ..query_rewriter import QueryRewriter
 def get_evaluation_node(evaluator: RetrievalEvaluator, rewriter: QueryRewriter):
     async def evaluation_node(state: AgentState):
         query = state["current_query"]
+        query_category = state.get("query_category")
         context = state.get("retrieved_context", [])
         
         # 1. Evaluate context
-        eval_result = await evaluator.evaluate(query, context)
+        eval_result = await evaluator.evaluate(query, context, query_category=query_category)
         
         trace_event = {
             "node": "evaluation_node",

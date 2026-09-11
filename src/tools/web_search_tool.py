@@ -51,7 +51,7 @@ class WebSearchTool(BaseTool):
 
         try:
             # pyrefly: ignore [missing-import]
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             import asyncio
 
             def _search():

@@ -22,10 +22,21 @@ def get_retrieval_node(tool_registry: ToolRegistry):
             tool = tool_registry.get_tool(tool_name)
             result = await tool.execute(**kwargs)
             
-            # If search, update retrieved context
-            if tool_name == "SEARCH_DOCUMENTS" and result.get("success"):
+            # If search or web search, update retrieved context
+            if tool_name in ["SEARCH_DOCUMENTS", "WEB_SEARCH"] and result.get("success"):
                 new_context = result.get("results", [])
                 
+                # If WEB_SEARCH, format the dict into readable text
+                if tool_name == "WEB_SEARCH":
+                    formatted_context = []
+                    for item in new_context:
+                        formatted_context.append({
+                            "text": f"Title: {item.get('title')}\nURL: {item.get('url')}\nSnippet: {item.get('snippet')}",
+                            "score": 1.0,
+                            "metadata": {"source": "WEB_SEARCH", "url": item.get('url')}
+                        })
+                    new_context = formatted_context
+
                 trace_event["status"] = "success"
                 trace_event["chunks_retrieved"] = len(new_context)
                 
@@ -46,6 +57,7 @@ def get_retrieval_node(tool_registry: ToolRegistry):
                 trace_event["status"] = "success"
                 return {
                     "retrieved_context": state.get("retrieved_context", []) + [context_item],
+                    "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,  # Also increment attempts here to prevent infinite loops
                     "step_count": state.get("step_count", 0) + 1,
                     "trace": [trace_event]
                 }
