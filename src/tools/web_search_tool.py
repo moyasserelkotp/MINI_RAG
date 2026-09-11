@@ -1,15 +1,17 @@
 from typing import Any, Dict, List
 from .base import BaseTool
 import logging
+from helpers.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 class WebSearchTool(BaseTool):
-    """Tool for searching the live internet via DuckDuckGo (no API key required)."""
+    """Tool for searching the live internet via Tavily."""
 
     def __init__(self, max_results: int = 5):
         self._max_results = max_results
+        self._settings = get_settings()
 
     @property
     def name(self) -> str:
@@ -48,17 +50,25 @@ class WebSearchTool(BaseTool):
             return {"error": "Missing required parameter: query"}
 
         max_results = min(int(kwargs.get("max_results", self._max_results)), 10)
+        api_key = self._settings.TAVILY_API_KEY
+        
+        if not api_key:
+            return {
+                "error": "TAVILY_API_KEY is not set in the configuration or .env file."
+            }
 
         try:
-            # pyrefly: ignore [missing-import]
-            from ddgs import DDGS
+            from tavily import AsyncTavilyClient
             import asyncio
-
-            def _search():
-                with DDGS() as ddgs:
-                    return list(ddgs.text(query, max_results=max_results))
-
-            results = await asyncio.to_thread(_search)
+            
+            client = AsyncTavilyClient(api_key=api_key)
+            response = await client.search(
+                query, 
+                search_depth="basic", 
+                max_results=max_results
+            )
+            
+            results = response.get("results", [])
 
             if not results:
                 return {
@@ -72,8 +82,8 @@ class WebSearchTool(BaseTool):
             for r in results:
                 formatted.append({
                     "title": r.get("title", ""),
-                    "url": r.get("href", ""),
-                    "snippet": r.get("body", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("content", ""),
                 })
 
             logger.info("WebSearchTool: returned %d results for query '%s'", len(formatted), query)
@@ -85,7 +95,7 @@ class WebSearchTool(BaseTool):
 
         except ImportError:
             return {
-                "error": "duckduckgo-search package is not installed. Run: pip install duckduckgo-search"
+                "error": "tavily-python package is not installed. Run: pip install tavily-python"
             }
         except Exception as e:
             logger.error("WebSearchTool error: %s", e)

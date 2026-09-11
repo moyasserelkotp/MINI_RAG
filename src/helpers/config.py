@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     LLAMA_API_KEY: Optional[str] = None
     LLAMA_API_URL: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
 
     GENERATION_MODEL_ID: Optional[str] = None
     EMBEDDING_MODEL_ID: Optional[str] = None
