@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -130,6 +130,36 @@ class Settings(BaseSettings):
     USE_VECTOR_MEMORY: bool = True
     USE_SEMANTIC_CACHE: bool = True
     SEMANTIC_CACHE_TTL_SECONDS: int = 86_400   # RAG-01: 24 h default; set 0 to disable TTL
+
+    # ─── Agent Settings ────────────────────────────────────────────────────────
+    # Master switch — set to False to disable all agentic endpoints
+    AGENT_ENABLED: bool = True
+
+    # Mode controls how much agentic reasoning to apply:
+    #   OFF         — behaves like Traditional RAG (no agent)
+    #   ROUTER      — agent selects the correct tool, no evaluation loop
+    #   AGENT       — router + tools + retrieval evaluation
+    #   FULL_AGENT  — router + planner + tools + evaluation + retry loops
+    AGENT_MODE: str = "FULL_AGENT"
+
+    # Optional separate LLM backend/model for agent reasoning.
+    # Falls back to GENERATION_BACKEND / GENERATION_MODEL_ID if not set.
+    AGENT_LLM_BACKEND: Optional[str] = None
+    AGENT_MODEL_ID: Optional[str] = None
+
+    # Safety limits — MUST be enforced to prevent infinite loops
+    MAX_AGENT_STEPS: int = 8
+    MAX_RETRIEVAL_ATTEMPTS: int = 3
+    MAX_TOOL_CALLS: int = 10
+
+    # Feature flags
+    ENABLE_QUERY_REWRITE: bool = True
+    ENABLE_RETRIEVAL_EVALUATION: bool = True
+    ENABLE_QUERY_PLANNING: bool = True
+    ENABLE_AGENT_TRACING: bool = True  # persist agent run traces in MongoDB
+
+    # Minimum retrieval quality score to consider results sufficient (0.0–1.0)
+    AGENT_SCORE_THRESHOLD: float = 0.35
 
     #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"

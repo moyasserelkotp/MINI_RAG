@@ -140,3 +140,72 @@ class GeminiProvider(LLMInterface):
 
     def construct_prompt(self, prompt: str, role: str):
         return {"role": role, "content": self.process_text(prompt)}
+
+    def generate_structured_output(
+        self,
+        prompt: str,
+        schema: dict,
+        chat_history: list = None,
+        max_output_tokens: int = None,
+        temperature: float = None,
+    ) -> dict | None:
+        """Native structured JSON output for Gemini."""
+        if not self.generation_model_id or self._generation_model is None:
+            logger.error("Generation model for Gemini was not set")
+            return None
+
+        chat_history = chat_history or []
+        max_output_tokens = max_output_tokens or self.default_generation_max_output_tokens
+        temperature = temperature or self.default_generation_temperature
+
+        try:
+            # Note: We must convert JSON schema to Gemini's format if it's strictly enforced.
+            # But Gemini supports generic JSON responses just by setting mime_type.
+            generation_config = genai.types.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                response_mime_type="application/json",
+                # response_schema is available in newer google-generativeai, but schema conversion 
+                # might be complex. Relying on JSON mime_type + instruction works well.
+            )
+
+            import json
+            schema_str = json.dumps(schema, indent=2)
+            json_prompt = f"{prompt}\n\nIMPORTANT: You must respond ONLY with a valid JSON object matching this schema:\n{schema_str}"
+
+            system_text_parts = []
+            gemini_history = []
+
+            for msg in chat_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_text_parts.append(content)
+                elif role == "assistant":
+                    gemini_history.append({"role": "model", "parts": [content]})
+                else:
+                    gemini_history.append({"role": "user", "parts": [content]})
+
+            if system_text_parts:
+                system_instruction = "\n\n".join(system_text_parts)
+                model = genai.GenerativeModel(
+                    self.generation_model_id,
+                    system_instruction=system_instruction,
+                )
+            else:
+                model = self._generation_model
+
+            chat = model.start_chat(history=gemini_history)
+            response = chat.send_message(
+                self.process_text(json_prompt),
+                generation_config=generation_config,
+            )
+
+            if not response or not response.text:
+                logger.error("Empty response from Gemini generate_structured_output")
+                return None
+                
+            return json.loads(response.text)
+        except Exception as e:
+            logger.error("Gemini generate_structured_output error: %s", e)
+            return super().generate_structured_output(prompt, schema, chat_history, max_output_tokens, temperature)

@@ -14,8 +14,11 @@ Usage in a logger:
 import uuid
 import logging
 from contextvars import ContextVar
+# pyrefly: ignore [missing-import]
 from starlette.middleware.base import BaseHTTPMiddleware
+# pyrefly: ignore [missing-import]
 from starlette.requests import Request
+# pyrefly: ignore [missing-import]
 from starlette.responses import Response
 
 logger = logging.getLogger(__name__)

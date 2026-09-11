@@ -41,3 +41,11 @@ class ResponseSignal(Enum):
 
     # Rate limiting
     RATE_LIMIT_ERROR = "rate_limit_error"
+
+    # Agent
+    AGENT_CHAT_SUCCESS = "agent_chat_success"
+    AGENT_CHAT_ERROR = "agent_chat_error"
+    AGENT_MAX_STEPS_REACHED = "agent_max_steps_reached"
+    AGENT_NO_CONTEXT = "agent_no_context"
+    AGENT_RUN_NOT_FOUND = "agent_run_not_found"
+    AGENT_DISABLED = "agent_disabled"

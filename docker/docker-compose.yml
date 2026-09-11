@@ -9,6 +9,9 @@ services:
     container_name: fastapi
     ports:
       - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - fastapi_data:/app/assets
       - ../src:/app           # live reload: code changes apply without rebuild

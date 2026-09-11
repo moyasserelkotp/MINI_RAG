@@ -1,5 +1,8 @@
+# pyrefly: ignore [missing-import]
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+# pyrefly: ignore [missing-import]
 from fastapi import FastAPI, Request, Response
+# pyrefly: ignore [missing-import]
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
 
@@ -28,6 +31,17 @@ GENERATION_LATENCY = Histogram(
 )
 GENERATION_TOKENS = Counter(
     "rag_generation_tokens_total", "Total tokens used in generation", ["backend"]
+)
+
+# Agent Metrics
+AGENT_RUNS = Counter(
+    "agent_runs_total", "Total agent executions", ["mode", "status"]
+)
+AGENT_STEPS = Histogram(
+    "agent_steps_total", "Number of steps taken by agent", ["mode"]
+)
+AGENT_TOOL_USE = Counter(
+    "agent_tool_use_total", "Total invocations of each agent tool", ["tool_name"]
 )
 
 # Cache Metrics
@@ -113,6 +127,16 @@ def record_retrieval_latency(project_id: str, duration: float):
 def record_chunks_retrieved(project_id: str, count: int):
     """Record number of chunks retrieved (project_id kept as parameter for API compat)"""
     CHUNKS_RETRIEVED.observe(count)
+
+def record_agent_run(mode: str, status: str):
+    AGENT_RUNS.labels(mode=mode, status=status).inc()
+
+def record_agent_steps(mode: str, steps: int):
+    AGENT_STEPS.labels(mode=mode).observe(steps)
+
+def record_agent_tool_use(tool_name: str):
+    """Record a single tool invocation."""
+    AGENT_TOOL_USE.labels(tool_name=tool_name).inc()
 
 def record_cache_hit(project_id: str):
     """Record cache hit"""

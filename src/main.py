@@ -174,10 +174,13 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+from routes.agent import agent_router
+
 #  Routers 
 app.include_router(base.base_router)
 app.include_router(data.data_router)
 app.include_router(nlp.nlp_router)
+app.include_router(agent_router)
 app.include_router(projects_router)
 app.include_router(project_alias_router)
 app.include_router(tasks_router)
