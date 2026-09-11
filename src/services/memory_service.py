@@ -135,6 +135,17 @@ class MemoryService:
         except Exception as e:
             logger.error("Entity Extraction Failed: %s", e)
 
+    async def save_messages(self, query: str, answer: Optional[str], session_id: str):
+        """Persist the user query and assistant answer to the chat history collection."""
+        try:
+            from models.MessageModel import MessageModel
+            message_model = await MessageModel.create_instance(self.db_client)
+            await message_model.add_message_to_session(session_id, "user", query)
+            if answer:
+                await message_model.add_message_to_session(session_id, "assistant", answer)
+        except Exception as e:
+            logger.error("save_messages failed: %s", e)
+
     async def condense_query(self, query: str, session_messages: list) -> str:
         try:
             if not session_messages:

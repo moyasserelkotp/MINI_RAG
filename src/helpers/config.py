@@ -2,7 +2,9 @@ from typing import List, Literal, Optional, Union
 import json
 from functools import lru_cache
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 from pydantic_settings import BaseSettings, SettingsConfigDict
+# pyrefly: ignore [missing-import]
 from pydantic import validator
 
 
@@ -160,6 +162,9 @@ class Settings(BaseSettings):
 
     # Minimum retrieval quality score to consider results sufficient (0.0–1.0)
     AGENT_SCORE_THRESHOLD: float = 0.35
+
+    # Web Search Tool — uses DuckDuckGo (no API key required)
+    ENABLE_WEB_SEARCH: bool = True
 
     #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"

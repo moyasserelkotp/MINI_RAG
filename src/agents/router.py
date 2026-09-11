@@ -23,6 +23,8 @@ class AgentRouter:
             return {"action": "LIST_ASSETS", "reason": "Query asks for list of files/assets."}
         if category == "GENERAL_CONVERSATION":
             return {"action": "DIRECT_ANSWER", "reason": "General conversational query."}
+        if category == "WEB_SEARCH":
+            return {"action": "WEB_SEARCH", "reason": "Query requires live internet information.", "tool_kwargs": {"query": query}}
             
         # For DOCUMENT_QUESTION or CONVERSATION_REFERENCE, we use the LLM to decide
         # exactly how to use the search or memory tools.

@@ -1,5 +1,6 @@
 from ..LLMInterface import LLMInterface
 from ..LLMEnums import CoHereEnums, DocumentTypeEnum
+# pyrefly: ignore [missing-import]
 import cohere
 import logging
 import time
@@ -53,6 +54,37 @@ class CoHereProvider(LLMInterface):
             logger.warning("Text truncated from %d to %d characters.", len(text), self.default_input_max_characters)
         return text[: self.default_input_max_characters].strip()
 
+    # Role mapping: normalise any incoming role string to CoHere's required format
+    _ROLE_MAP = {
+        "user": "USER",
+        "USER": "USER",
+        "assistant": "CHATBOT",
+        "ASSISTANT": "CHATBOT",
+        "chatbot": "CHATBOT",
+        "CHATBOT": "CHATBOT",
+        "system": "SYSTEM",
+        "SYSTEM": "SYSTEM",
+    }
+
+    def _to_cohere_history(self, chat_history: list) -> tuple[str, list]:
+        """
+        Split chat_history into:
+          - preamble: concatenated text of all SYSTEM messages (CoHere v1 parameter)
+          - history:  list of {role, message} dicts for USER/CHATBOT turns
+        """
+        preamble_parts = []
+        history = []
+        for msg in chat_history:
+            role_raw = msg.get("role", "user")
+            cohere_role = self._ROLE_MAP.get(role_raw, "USER")
+            # CoHere v1 /chat uses "message" key, not "text" or "content"
+            text = msg.get("message") or msg.get("text") or msg.get("content") or ""
+            if cohere_role == "SYSTEM":
+                preamble_parts.append(text)
+            else:
+                history.append({"role": cohere_role, "message": text})
+        return "\n\n".join(preamble_parts), history
+
     def generate_text(
         self,
         prompt: str,
@@ -70,14 +102,20 @@ class CoHereProvider(LLMInterface):
         max_output_tokens = max_output_tokens or self.default_generation_max_output_tokens
         temperature = temperature or self.default_generation_temperature
 
+        preamble, cohere_history = self._to_cohere_history(chat_history or [])
+
         try:
-            response = self.client.chat(
+            kwargs = dict(
                 model=self.generation_model_id,
-                chat_history=chat_history,
+                chat_history=cohere_history,
                 message=self.process_text(prompt),
                 temperature=temperature,
                 max_tokens=max_output_tokens,
             )
+            if preamble:
+                kwargs["preamble"] = preamble
+
+            response = self.client.chat(**kwargs)
             if not response or not response.text:
                 logger.error("Empty response from CoHere generate")
                 return None
@@ -178,4 +216,6 @@ class CoHereProvider(LLMInterface):
         return results
 
     def construct_prompt(self, prompt: str, role: str):
-        return {"role": role, "text": self.process_text(prompt)}
+        # Always store with the "message" key; role is normalised at send time
+        cohere_role = self._ROLE_MAP.get(role, "USER")
+        return {"role": cohere_role, "message": self.process_text(prompt)}

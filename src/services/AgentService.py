@@ -13,6 +13,7 @@ from tools.search_tool import SearchDocumentsTool
 from tools.project_tool import GetProjectInfoTool
 from tools.asset_tool import ListProjectAssetsTool
 from tools.memory_tool import GetConversationContextTool
+from tools.web_search_tool import WebSearchTool
 
 from utils.metrics import record_agent_run, record_agent_steps, record_agent_tool_use
 
@@ -82,6 +83,8 @@ class AgentService:
             tool_registry.register(GetProjectInfoTool(self.project_model, project.project_id))
             tool_registry.register(ListProjectAssetsTool(self.asset_model, project.project_id))
             tool_registry.register(GetConversationContextTool(self.memory_service, project.project_id, session_id))
+            if getattr(self.app_settings, "ENABLE_WEB_SEARCH", True):
+                tool_registry.register(WebSearchTool())
             
             # 2. Setup Router and Planner with this registry
             router = AgentRouter(self.llm_client, tool_registry)

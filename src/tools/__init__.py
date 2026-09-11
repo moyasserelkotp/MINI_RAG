@@ -4,6 +4,7 @@ from .search_tool import SearchDocumentsTool
 from .project_tool import GetProjectInfoTool
 from .asset_tool import ListProjectAssetsTool
 from .memory_tool import GetConversationContextTool
+from .web_search_tool import WebSearchTool
 
 __all__ = [
     "BaseTool",
@@ -11,5 +12,6 @@ __all__ = [
     "SearchDocumentsTool",
     "GetProjectInfoTool",
     "ListProjectAssetsTool",
-    "GetConversationContextTool"
+    "GetConversationContextTool",
+    "WebSearchTool"
 ]

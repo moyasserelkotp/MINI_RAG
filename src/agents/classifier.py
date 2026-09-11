@@ -13,6 +13,11 @@ class QueryClassifier:
         self.project_keywords = ["project", "metadata", "created", "name of this project"]
         self.asset_keywords = ["files", "documents uploaded", "assets", "what files"]
         self.complex_keywords = ["compare", "analyze across", "differences between", "similarities", "vs"]
+        self.web_search_keywords = [
+            "latest", "recent", "news", "today", "current price", "stock price",
+            "weather", "live", "right now", "breaking", "2024", "2025", "2026",
+            "who won", "what happened", "trending"
+        ]
         
     async def classify(self, query: str) -> str:
         """
@@ -29,6 +34,9 @@ class QueryClassifier:
         # 1. Fast heuristics
         if any(kw in query_lower for kw in self.complex_keywords):
             return "COMPLEX_MULTI_STEP"
+
+        if any(kw in query_lower for kw in self.web_search_keywords):
+            return "WEB_SEARCH"
             
         if any(kw in query_lower for kw in self.asset_keywords):
             return "ASSET_METADATA"
@@ -49,7 +57,8 @@ class QueryClassifier:
                             "ASSET_METADATA",
                             "CONVERSATION_REFERENCE",
                             "COMPLEX_MULTI_STEP",
-                            "GENERAL_CONVERSATION"
+                            "GENERAL_CONVERSATION",
+                            "WEB_SEARCH"
                         ]
                     }
                 },
@@ -66,6 +75,7 @@ Categories:
 - CONVERSATION_REFERENCE: Referring to something said earlier in the chat (e.g., "what did you just say?", "tell me more about that").
 - COMPLEX_MULTI_STEP: Queries requiring comparison across multiple documents or complex multi-step reasoning.
 - GENERAL_CONVERSATION: Greetings, generic statements (e.g., "hello", "thanks").
+- WEB_SEARCH: Asking for live internet data — current events, latest news, real-time prices, weather, or anything likely NOT in uploaded documents.
 """
             try:
                 # Wrap in asyncio.to_thread if the llm_client is synchronous

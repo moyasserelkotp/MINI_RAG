@@ -30,7 +30,7 @@ def get_router_node(classifier: QueryClassifier, router: AgentRouter):
         if action == "DIRECT_ANSWER":
             return {
                 "query_category": category,
-                "selected_tool": None,
+                "selected_tool": "DIRECT_ANSWER",
                 "tool_calls": [],
                 "step_count": state.get("step_count", 0) + 1,
                 "trace": [trace_event]
