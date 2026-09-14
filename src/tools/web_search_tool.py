@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from .base import BaseTool
 import logging
 from helpers.config import get_settings
@@ -12,6 +12,29 @@ class WebSearchTool(BaseTool):
     def __init__(self, max_results: int = 5):
         self._max_results = max_results
         self._settings = get_settings()
+        # FIX-1: Create the client once in __init__, not on every execute() call.
+        # Creating AsyncTavilyClient per-call opens a new HTTP session each time,
+        # causing connection overhead and potential resource leaks under load.
+        self._client: Optional[Any] = self._init_client()
+
+    def _init_client(self) -> Optional[Any]:
+        """Initialise AsyncTavilyClient once at construction time."""
+        api_key = self._settings.TAVILY_API_KEY
+        if not api_key:
+            logger.warning("WebSearchTool: TAVILY_API_KEY is not set — web search disabled.")
+            return None
+        try:
+            # pyrefly: ignore [missing-import]
+            from tavily import AsyncTavilyClient
+            client = AsyncTavilyClient(api_key=api_key)
+            logger.info("WebSearchTool: Tavily async client initialised.")
+            return client
+        except ImportError:
+            logger.error(
+                "WebSearchTool: tavily-python is not installed. "
+                "Run: pip install tavily-python"
+            )
+            return None
 
     @property
     def name(self) -> str:
@@ -49,25 +72,22 @@ class WebSearchTool(BaseTool):
         if not query:
             return {"error": "Missing required parameter: query"}
 
+        if not self._settings.TAVILY_API_KEY:
+            return {"error": "TAVILY_API_KEY is not set in the configuration or .env file."}
+
+        if self._client is None:
+            return {"error": "tavily-python package is not installed. Run: pip install tavily-python"}
+
         max_results = min(int(kwargs.get("max_results", self._max_results)), 10)
-        api_key = self._settings.TAVILY_API_KEY
-        
-        if not api_key:
-            return {
-                "error": "TAVILY_API_KEY is not set in the configuration or .env file."
-            }
 
         try:
-            from tavily import AsyncTavilyClient
-            import asyncio
-            
-            client = AsyncTavilyClient(api_key=api_key)
-            response = await client.search(
-                query, 
-                search_depth="basic", 
+            # Reuse the shared client — no new session created per call
+            response = await self._client.search(
+                query,
+                search_depth="basic",
                 max_results=max_results
             )
-            
+
             results = response.get("results", [])
 
             if not results:
@@ -78,13 +98,14 @@ class WebSearchTool(BaseTool):
                     "message": "No web results found for this query."
                 }
 
-            formatted = []
-            for r in results:
-                formatted.append({
+            formatted = [
+                {
                     "title": r.get("title", ""),
                     "url": r.get("url", ""),
                     "snippet": r.get("content", ""),
-                })
+                }
+                for r in results
+            ]
 
             logger.info("WebSearchTool: returned %d results for query '%s'", len(formatted), query)
             return {
@@ -93,10 +114,6 @@ class WebSearchTool(BaseTool):
                 "results": formatted
             }
 
-        except ImportError:
-            return {
-                "error": "tavily-python package is not installed. Run: pip install tavily-python"
-            }
         except Exception as e:
             logger.error("WebSearchTool error: %s", e)
             return {"error": str(e)}

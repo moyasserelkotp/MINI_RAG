@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Optional
 import uuid
+import asyncio
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
 from agents.classifier import QueryClassifier
 from agents.router import AgentRouter
@@ -23,6 +25,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class AgentService:
     def __init__(
         self,
@@ -32,7 +35,8 @@ class AgentService:
         project_model,
         asset_model,
         agent_run_model,
-        nlp_controller=None
+        nlp_controller=None,
+        llm_semaphore: asyncio.Semaphore = None,  # FIX-2: semaphore for concurrent LLM calls
     ):
         self.app_settings = get_settings()
         self.llm_client = llm_client
@@ -42,41 +46,80 @@ class AgentService:
         self.asset_model = asset_model
         self.agent_run_model = agent_run_model
         self.nlp_controller = nlp_controller
-        
+        self.cache_service = self.nlp_controller.cache_service  # FIX-7
+
+        # FIX-2: Use the shared semaphore, or fall back to a generous local one
+        # so the service is self-contained even if no semaphore is injected.
+        self.llm_semaphore: asyncio.Semaphore = llm_semaphore or asyncio.Semaphore(10)
+
         # Initialize components
-        self.classifier = QueryClassifier(self.llm_client)
-        
-        # Tools will be registered per-project in execute_agent since tools need project_id
-        # But for efficiency, we can create the graph structure dynamically or pass context.
-        # LangGraph allows passing a state that is just a dictionary.
-        
-        self.router = None # Will be initialized per execution if tool registry changes
-        
+        self.classifier = QueryClassifier(self.llm_client, self.llm_semaphore)  # FIX-2
+
+        self.router = None  # Will be initialized per execution if tool registry changes
+
         threshold = getattr(self.app_settings, "AGENT_SCORE_THRESHOLD", 0.7)
         self.evaluator = RetrievalEvaluator(self.llm_client, score_threshold=threshold)
         self.rewriter = QueryRewriter(self.llm_client)
-        
-    async def execute_agent(self, project: Any, session_id: str, query: str, chat_history: list = None) -> Dict[str, Any]:
+
+    # -----------------------------------------------------------------
+    # FIX-2: context manager that acquires the semaphore before any
+    # LLM call — all agent components receive this helper via dependency.
+    # -----------------------------------------------------------------
+    @asynccontextmanager
+    async def _llm_slot(self):
+        """Acquire a semaphore slot before an LLM call; release after."""
+        async with self.llm_semaphore:
+            yield
+
+    async def execute_agent(self, project: Any, session_id: str, query: str, chat_history: list = None, run_id: str = None) -> Dict[str, Any]:
         """
         Executes the agentic RAG workflow.
         """
-        run_id = str(uuid.uuid4())
-        
-        # Create a new AgentRun in DB
-        agent_run = AgentRun(
-            run_id=run_id,
-            project_id=project.id,
-            session_id=session_id,
-            status="running",
-            query=query
-        )
-        await self.agent_run_model.create_agent_run(agent_run)
-        
+        if not run_id:
+            run_id = str(uuid.uuid4())
+            # For standalone/fallback execution, create it here
+            agent_run = AgentRun(
+                run_id=run_id,
+                project_id=project.id,
+                session_id=session_id,
+                status="running",
+                query=query
+            )
+            await self.agent_run_model.create_agent_run(agent_run)
+
         try:
             agent_mode = getattr(self.app_settings, "AGENT_MODE", "FULL_AGENT")
             if agent_mode == "OFF":
                 return {"error": "Agentic RAG is disabled."}
-                
+
+            # FIX-7: Add semantic cache check to the agent path
+            use_cache = getattr(self.app_settings, "ENABLE_SEMANTIC_CACHE", True)
+            query_emb = None
+            if use_cache and not chat_history:
+                try:
+                    # Need embedding for cache check
+                    query_emb = await asyncio.to_thread(
+                        self.memory_service.embedding_client.embed_text, 
+                        query, 
+                        "query"
+                    )
+                    cached_ans = await self.cache_service.check_semantic_cache(
+                        project_id=project.project_id,
+                        cache_vec=query_emb,
+                        use_cache=True,
+                        cache_threshold=getattr(self.app_settings, "CACHE_SIMILARITY_THRESHOLD", 0.95)
+                    )
+                    if cached_ans:
+                        # Update run status to cached
+                        agent_run.status = "completed"
+                        await self.agent_run_model.update_agent_run(run_id, {"status": "completed"})
+                        return {
+                            "answer": cached_ans,
+                            "metadata": {"cached": True, "agent_path": True}
+                        }
+                except Exception as e:
+                    logger.error(f"Semantic cache error in agent: {e}")
+
             # 1. Setup Tools for this specific project/session
             tool_registry = ToolRegistry()
             tool_registry.register(SearchDocumentsTool(self.retrieval_service, self.nlp_controller, project))
@@ -85,11 +128,11 @@ class AgentService:
             tool_registry.register(GetConversationContextTool(self.memory_service, project.project_id, session_id))
             if getattr(self.app_settings, "ENABLE_WEB_SEARCH", True):
                 tool_registry.register(WebSearchTool())
-            
+
             # 2. Setup Router and Planner with this registry
-            router = AgentRouter(self.llm_client, tool_registry)
-            planner = AgentPlanner(self.llm_client, tool_registry)
-            
+            router = AgentRouter(self.llm_client, tool_registry, self.llm_semaphore)   # FIX-2
+            planner = AgentPlanner(self.llm_client, tool_registry, self.llm_semaphore)  # FIX-2
+
             # 3. Create Graph
             graph = create_agent_graph(
                 classifier=self.classifier,
@@ -99,9 +142,10 @@ class AgentService:
                 planner=planner,
                 tool_registry=tool_registry,
                 llm_client=self.llm_client,
-                agent_mode=agent_mode
+                agent_mode=agent_mode,
+                llm_semaphore=self.llm_semaphore,  # FIX-2: pass to answer_node
             )
-            
+
             # 4. Initialize State
             initial_state = {
                 "run_id": run_id,
@@ -127,10 +171,24 @@ class AgentService:
                 "sources": [],
                 "trace": []
             }
-            
-            # 5. Execute Graph
-            final_state = await graph.ainvoke(initial_state)
-            
+
+            # 5. Execute Graph — FIX-5: hard wall-clock timeout to prevent runaway graphs
+            timeout_s = getattr(self.app_settings, "AGENT_TIMEOUT_SECONDS", 60)
+            try:
+                final_state = await asyncio.wait_for(
+                    graph.ainvoke(initial_state),
+                    timeout=timeout_s
+                )
+            except asyncio.TimeoutError:
+                logger.error("Agent graph timed out after %ds for query: %s", timeout_s, query)
+                await self.agent_run_model.update_agent_run(run_id, {
+                    "status": "failed",
+                    "error": f"Agent timed out after {timeout_s}s",
+                    "finished_at": datetime.now(timezone.utc)
+                })
+                record_agent_run(agent_mode, "failed")
+                return {"answer": "I'm sorry, the request took too long to process. Please try again.", "sources": [], "run_id": run_id, "steps": 0}
+
             # 6. Update AgentRun record
             update_data = {
                 "status": "success",
@@ -142,30 +200,43 @@ class AgentService:
                 "trace": final_state.get("trace", []),
                 "finished_at": datetime.now(timezone.utc)
             }
-            
+
             if final_state.get("errors"):
                 update_data["error"] = "; ".join(final_state["errors"])
                 update_data["status"] = "failed"
-                
+
             await self.agent_run_model.update_agent_run(run_id, update_data)
-            
+
             # Metrics
             record_agent_run(agent_mode, update_data["status"])
             record_agent_steps(agent_mode, update_data["steps_count"])
             for tool in update_data["tools_used"]:
                 record_agent_tool_use(tool)
-                
+
             # Optional Memory save
             if session_id and update_data["status"] == "success":
                 await self.memory_service.save_messages(query, final_state.get("final_answer"), session_id)
-            
+
+            # FIX-7: Save to semantic cache on success
+            if use_cache and not chat_history and query_emb and final_state.get("final_answer") and update_data["status"] == "success":
+                try:
+                    await self.cache_service.set_semantic_cache(
+                        project_id=project.project_id,
+                        query=query,
+                        cache_vec=query_emb,
+                        answer=final_state.get("final_answer"),
+                        use_cache=True
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to set semantic cache in agent: {e}")
+
             return {
                 "answer": final_state.get("final_answer"),
                 "sources": final_state.get("sources", []),
                 "run_id": run_id,
                 "steps": final_state.get("step_count", 0)
             }
-            
+
         except Exception as e:
             logger.error(f"Agent execution failed: {e}", exc_info=True)
             await self.agent_run_model.update_agent_run(run_id, {

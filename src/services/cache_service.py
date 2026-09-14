@@ -114,3 +114,24 @@ class CacheService:
                 pass
             
         return None
+
+    async def set_semantic_cache(self, project_id: str, query: str, cache_vec: list, answer: str, use_cache: bool):
+        if not use_cache:
+            return
+            
+        await self.init_cache_collection(project_id)
+        cache_col_name = self.get_cache_collection_name(project_id)
+        cache_id = self.build_cache_key(project_id, query)
+        
+        expires_at = time.time() + getattr(self.app_settings, "CACHE_TTL_SECONDS", _CACHE_TTL_DEFAULT)
+        try:
+            await asyncio.to_thread(
+                self.vectordb_client.insert_many,
+                collection_name=cache_col_name,
+                texts=[query],
+                metadata=[{"answer": answer, "expires_at": expires_at}],
+                vectors=[cache_vec],
+                record_ids=[cache_id]
+            )
+        except Exception as e:
+            logger.error("Error setting semantic cache: %s", e)

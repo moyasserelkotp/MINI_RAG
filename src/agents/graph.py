@@ -20,7 +20,8 @@ def create_agent_graph(
     planner,
     tool_registry,
     llm_client,
-    agent_mode="FULL_AGENT"
+    agent_mode="FULL_AGENT",
+    llm_semaphore=None,  # FIX-2
 ):
     """Creates and compiles the LangGraph state machine."""
     
@@ -32,7 +33,7 @@ def create_agent_graph(
     workflow.add_node("planner", get_planner_node(planner))
     workflow.add_node("retrieval", get_retrieval_node(tool_registry))
     workflow.add_node("evaluation", get_evaluation_node(evaluator, rewriter))
-    workflow.add_node("answer", get_answer_node(llm_client))
+    workflow.add_node("answer", get_answer_node(llm_client, llm_semaphore))  # FIX-2
     
     # Conditional Edges
     def route_after_router(state: AgentState):

@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -6,8 +7,9 @@ logger = logging.getLogger(__name__)
 class QueryClassifier:
     """Classifies user queries into specific action categories."""
     
-    def __init__(self, llm_client=None):
+    def __init__(self, llm_client=None, llm_semaphore: asyncio.Semaphore = None):
         self.llm_client = llm_client
+        self._semaphore = llm_semaphore  # FIX-2: cap concurrent LLM calls
         
         # Fast deterministic heuristics
         self.project_keywords = ["project", "metadata", "created", "name of this project"]
@@ -52,8 +54,8 @@ class QueryClassifier:
                     "category": {
                         "type": "string",
                         "enum": [
-                            "DOCUMENT_QUESTION", 
-                            "PROJECT_METADATA", 
+                            "DOCUMENT_QUESTION",
+                            "PROJECT_METADATA",
                             "ASSET_METADATA",
                             "CONVERSATION_REFERENCE",
                             "COMPLEX_MULTI_STEP",
@@ -64,7 +66,7 @@ class QueryClassifier:
                 },
                 "required": ["category"]
             }
-            
+
             prompt = f"""Classify the following user query into exactly one of the provided categories.
 Query: "{query}"
 
@@ -78,13 +80,13 @@ Categories:
 - WEB_SEARCH: Asking for live internet data — current events, latest news, real-time prices, weather, or anything likely NOT in uploaded documents.
 """
             try:
-                # Wrap in asyncio.to_thread if the llm_client is synchronous
-                import asyncio
-                result = await asyncio.to_thread(
-                    self.llm_client.generate_structured_output,
-                    prompt=prompt,
-                    schema=schema
-                )
+                # FIX-2: acquire semaphore slot before LLM call
+                async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+                    result = await asyncio.to_thread(
+                        self.llm_client.generate_structured_output,
+                        prompt=prompt,
+                        schema=schema
+                    )
                 if result and "category" in result:
                     return result["category"]
             except Exception as e:

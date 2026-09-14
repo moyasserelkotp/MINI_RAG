@@ -6,9 +6,10 @@ logger = logging.getLogger(__name__)
 class AgentRouter:
     """Decides the next action for the agent based on the state."""
     
-    def __init__(self, llm_client, tool_registry):
+    def __init__(self, llm_client, tool_registry, llm_semaphore: asyncio.Semaphore = None):
         self.llm_client = llm_client
         self.tool_registry = tool_registry
+        self._semaphore = llm_semaphore  
         
     async def route(self, query: str, category: str, chat_history: list = None) -> dict:
         """
@@ -25,9 +26,14 @@ class AgentRouter:
             return {"action": "DIRECT_ANSWER", "reason": "General conversational query."}
         if category == "WEB_SEARCH":
             return {"action": "WEB_SEARCH", "reason": "Query requires live internet information.", "tool_kwargs": {"query": query}}
+        if category == "DOCUMENT_QUESTION":
+            # FIX-9: Skip LLM routing for the most common RAG query type and jump straight to retrieval
+            return {"action": "SEARCH_DOCUMENTS", "reason": "Query asks about project documents.", "tool_kwargs": {"query": query}}
+        if category == "CONVERSATION_REFERENCE":
+            return {"action": "GET_CONVERSATION_CONTEXT", "reason": "Query references previous conversation.", "tool_kwargs": {}}
             
-        # For DOCUMENT_QUESTION or CONVERSATION_REFERENCE, we use the LLM to decide
-        # exactly how to use the search or memory tools.
+        # For COMPLEX_MULTI_STEP or any unhandled category, we use the LLM to decide
+        # exactly how to use the available tools.
         
         tools_schema = self.tool_registry.get_tools_schema()
         
@@ -64,12 +70,13 @@ Available Tools:
         prompt += "Choose the best action and provide the necessary tool arguments."
         
         try:
-            result = await asyncio.to_thread(
-                self.llm_client.generate_structured_output,
-                prompt=prompt,
-                schema=schema,
-                chat_history=chat_history
-            )
+            async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+                result = await asyncio.to_thread(
+                    self.llm_client.generate_structured_output,
+                    prompt=prompt,
+                    schema=schema,
+                    chat_history=chat_history
+                )
             
             if result and "action" in result:
                 return result

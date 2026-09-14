@@ -6,9 +6,10 @@ logger = logging.getLogger(__name__)
 class AgentPlanner:
     """Creates execution plans for complex queries."""
     
-    def __init__(self, llm_client, tool_registry):
+    def __init__(self, llm_client, tool_registry, llm_semaphore: asyncio.Semaphore = None):
         self.llm_client = llm_client
         self.tool_registry = tool_registry
+        self._semaphore = llm_semaphore  # FIX-2
         
     async def create_plan(self, query: str, chat_history: list = None) -> list:
         """
@@ -49,12 +50,14 @@ Available Tools:
             prompt += f"- {t['name']}: {t['description']}\n  Parameters: {t['parameters']}\n\n"
             
         try:
-            result = await asyncio.to_thread(
-                self.llm_client.generate_structured_output,
-                prompt=prompt,
-                schema=schema,
-                chat_history=chat_history
-            )
+            # FIX-2: acquire semaphore slot before LLM call
+            async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+                result = await asyncio.to_thread(
+                    self.llm_client.generate_structured_output,
+                    prompt=prompt,
+                    schema=schema,
+                    chat_history=chat_history
+                )
             
             if result and "steps" in result:
                 return result["steps"]

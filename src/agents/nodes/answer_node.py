@@ -13,7 +13,7 @@ _INJECTION_GUARD = (
 )
 
 
-def get_answer_node(llm_client):
+def get_answer_node(llm_client, llm_semaphore: asyncio.Semaphore = None):  # FIX-2
     async def answer_node(state: AgentState):
         query = state["original_query"]
         context_chunks = state.get("retrieved_context", [])
@@ -48,20 +48,23 @@ def get_answer_node(llm_client):
 User Question: {query}
 """
         try:
-            response = await asyncio.to_thread(
-                llm_client.generate_structured_output,
-                prompt=prompt,
-                schema={
-                    "type": "object",
-                    "properties": {
-                        "answer": {"type": "string", "description": "The final answer to the user's query."}
+            # FIX-2: acquire semaphore slot before the final answer LLM call
+            _sem = llm_semaphore if llm_semaphore else asyncio.Semaphore(9999)
+            async with _sem:
+                response = await asyncio.to_thread(
+                    llm_client.generate_structured_output,
+                    prompt=prompt,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "answer": {"type": "string", "description": "The final answer to the user's query."}
+                        },
+                        "required": ["answer"]
                     },
-                    "required": ["answer"]
-                },
-                chat_history=[
-                    llm_client.construct_prompt(_INJECTION_GUARD, "system")
-                ] + history
-            )
+                    chat_history=[
+                        llm_client.construct_prompt(_INJECTION_GUARD, "system")
+                    ] + history
+                )
 
             if response and "answer" in response:
                 final_answer = response["answer"]

@@ -44,6 +44,7 @@ def _make_agent_controller(request: Request) -> AgentController:
         template_parser=request.app.template_parser,
         cohere_client=getattr(request.app, "cohere_client", None),
         initialized_collections=request.app.initialized_collections,
+        llm_semaphore=getattr(request.app, "llm_semaphore", None),
     )
 
 @agent_router.post("/query", response_model=AgentQueryResponse)
@@ -55,8 +56,8 @@ async def query_agent(
     """
     Query the Agentic RAG system for a specific project.
     """
-    # 1. Get controllers
-    agent_controller = _make_agent_controller(request)
+    # FIX-3: Reuse the cached controller from app state (created once at startup)
+    agent_controller = request.app.agent_controller
     project_model = await ProjectModel.create_instance(db_client=request.app.db_client)
     project = await project_model.get_project_by_id(project_id=payload.project_id)
 

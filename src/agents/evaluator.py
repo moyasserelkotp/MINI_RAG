@@ -7,10 +7,11 @@ logger = logging.getLogger(__name__)
 class RetrievalEvaluator:
     """Evaluates the quality of retrieved context."""
 
-    def __init__(self, llm_client, score_threshold=0.35):
+    def __init__(self, llm_client, score_threshold=0.35, llm_semaphore: asyncio.Semaphore = None):
         self.llm_client = llm_client
         self.score_threshold = score_threshold
         self._settings = get_settings()
+        self._semaphore = llm_semaphore  # FIX-2
 
     async def evaluate(self, query: str, retrieved_context: list, query_category: str = None) -> dict:
         """
@@ -41,9 +42,9 @@ class RetrievalEvaluator:
                 "action": "REWRITE_QUERY"
             }
 
-        # Optional LLM-based check — only when explicitly enabled in config
-        enable_llm_eval = getattr(self._settings, "ENABLE_RETRIEVAL_EVALUATION", True)
-        if not enable_llm_eval or not self.llm_client:
+        enable_llm_eval = getattr(self._settings, "ENABLE_RETRIEVAL_EVALUATION", False)
+        is_complex = query_category == "COMPLEX_MULTI_STEP"
+        if not enable_llm_eval or not is_complex or not self.llm_client:
             # Score passed deterministic check — treat as sufficient
             return {
                 "is_sufficient": True,
@@ -77,11 +78,13 @@ Retrieved Context:
 {context_str}
 """
         try:
-            result = await asyncio.to_thread(
-                self.llm_client.generate_structured_output,
-                prompt=prompt,
-                schema=schema
-            )
+            # FIX-2: acquire semaphore slot before LLM call
+            async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+                result = await asyncio.to_thread(
+                    self.llm_client.generate_structured_output,
+                    prompt=prompt,
+                    schema=schema
+                )
 
             if result and "is_sufficient" in result:
                 is_sufficient = result["is_sufficient"]

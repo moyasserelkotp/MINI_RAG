@@ -1,12 +1,18 @@
 import asyncio
+# pyrefly: ignore [missing-import]
 import logging
 from contextlib import asynccontextmanager
-
+# pyrefly: ignore [missing-import]
 from fastapi import FastAPI
+# pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
+# pyrefly: ignore [missing-import]
 from motor.motor_asyncio import AsyncIOMotorClient
+# pyrefly: ignore [missing-import]
 from slowapi import _rate_limit_exceeded_handler
+# pyrefly: ignore [missing-import]
 from slowapi.errors import RateLimitExceeded
+# pyrefly: ignore [missing-import]
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from helpers.config import get_settings
@@ -80,6 +86,7 @@ async def lifespan(app: FastAPI):
     app.cohere_client = None
     if _settings.USE_RERANK and _settings.COHERE_API_KEY:
         try:
+            # pyrefly: ignore [missing-import]
             import cohere as _cohere
             app.cohere_client = _cohere.Client(_settings.COHERE_API_KEY)
             logger.info("Cohere rerank client initialised")
@@ -91,6 +98,23 @@ async def lifespan(app: FastAPI):
     app.initialized_collections = set()
     # llm_semaphore — caps concurrent LLM API calls to avoid provider rate limits
     app.llm_semaphore = asyncio.Semaphore(10)
+
+    # FIX-3: Create AgentController ONCE at startup rather than per-request.
+    # The controller holds stateless service objects; project/session context
+    # flows through the state dict and method arguments, so it is safe to share.
+    from controllers import AgentController
+    app.agent_controller = AgentController(
+        db_client=app.db_client,
+        vectordb_client=app.vectordb_client,
+        generation_client=app.generation_client,
+        embedding_client=app.embedding_client,
+        template_parser=app.template_parser,
+        cohere_client=app.cohere_client,
+        initialized_collections=app.initialized_collections,
+        llm_semaphore=app.llm_semaphore,
+    )
+    await app.agent_controller.init_collections()
+    logger.info("AgentController initialised and cached on app state.")
 
     logger.info("Startup complete — ready to serve requests.")
     yield
@@ -140,23 +164,19 @@ app = FastAPI(
 
 #  Middleware (registration order matters — last added = outermost) 
 
-# 1. Prometheus — must be first so it captures all requests
 try:
     add_prometheus_middleware(app)
 except Exception as exc:
     logger.exception("Failed to register Prometheus middleware: %s", exc)
 
-# 2. Auth — validates API key before anything else reaches the route
 app.add_middleware(BaseHTTPMiddleware, dispatch=api_key_middleware)
 if settings.ENABLE_AUTH:
     logger.info("API key auth ENABLED (%d key(s) configured)", len(settings.API_KEYS))
 else:
-    logger.warning("⚠️  Authentication is DISABLED — enable in production")
+    logger.warning("⚠️ Authentication is DISABLED — enable in production")
 
-# 3. Request-ID — attaches X-Request-ID to every request/response
 app.add_middleware(RequestIDMiddleware)
 
-# 4. CORS
 _cors_origins = settings.CORS_ALLOWED_ORIGINS
 if not settings.DEBUG and _cors_origins == ["*"]:
     logger.error("CORS wildcard '*' is not allowed in production. Defaulting to [].")
@@ -170,7 +190,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 5. Rate limiter
+# Rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -187,11 +207,11 @@ app.include_router(tasks_router)
 app.include_router(sessions_router)
 app.include_router(eval_router)
 
-#  Prometheus metrics endpoint 
+# Prometheus metrics endpoint 
 try:
     register_metrics_endpoint(app)
 except Exception as exc:
-    logger.exception("Failed to register /metrics endpoint: %s", exc)
+    logger.exception("⚠️ Failed to register /metrics endpoint: %s", exc)
 
 
 """
