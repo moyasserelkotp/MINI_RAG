@@ -1,9 +1,11 @@
+# pyrefly: ignore [missing-import]
 from qdrant_client import models, QdrantClient
 from ..VectorDBInterface import VectorDBInterface
 from ..VectorDBEnums import DistanceMethodEnums
 import logging
 from typing import List, Optional
 import hashlib
+# pyrefly: ignore [missing-import]
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
@@ -253,16 +255,23 @@ class QdrantDBProvider(VectorDBInterface):
         vector: list,
         limit: int = 5,
         score_threshold: float = None,
+        metadata_filter: dict = None,
+        **kwargs,
     ):
-        kwargs = dict(
+        q = dict(
             collection_name=collection_name,
             query_vector=vector,
             limit=limit,
         )
         if score_threshold is not None and score_threshold > 0:
-            kwargs["score_threshold"] = score_threshold
+            q["score_threshold"] = score_threshold
+        if metadata_filter:
+            q["query_filter"] = models.Filter(must=[
+                models.FieldCondition(key=k, match=models.MatchValue(value=v))
+                for k, v in metadata_filter.items()
+            ])
 
-        return self.client.search(**kwargs)
+        return self.client.search(**q)
 
     def hybrid_search(
         self,
@@ -272,6 +281,8 @@ class QdrantDBProvider(VectorDBInterface):
         limit: int = 5,
         semantic_weight: float = 0.6,
         fetch_limit: int = None,
+        metadata_filter: dict = None,
+        **kwargs,
     ):
         """Hybrid search using Reciprocal Rank Fusion (RRF).
 
@@ -288,11 +299,18 @@ class QdrantDBProvider(VectorDBInterface):
             candidate_pool = fetch_limit if fetch_limit is not None else limit * 4
 
             # Stage 1: semantic candidates
-            semantic_results = self.client.search(
+            q = dict(
                 collection_name=collection_name,
                 query_vector=vector,
                 limit=candidate_pool,
             )
+            if metadata_filter:
+                q["query_filter"] = models.Filter(must=[
+                    models.FieldCondition(key=k, match=models.MatchValue(value=v))
+                    for k, v in metadata_filter.items()
+                ])
+                
+            semantic_results = self.client.search(**q)
 
             if not semantic_results:
                 return []
@@ -356,6 +374,6 @@ class QdrantDBProvider(VectorDBInterface):
         except Exception as e:
             logger.error("Hybrid search error: %s — falling back to semantic", e)
             return self.search_by_vector(
-                collection_name=collection_name, vector=vector, limit=limit
+                collection_name=collection_name, vector=vector, limit=limit, metadata_filter=metadata_filter
             )
 

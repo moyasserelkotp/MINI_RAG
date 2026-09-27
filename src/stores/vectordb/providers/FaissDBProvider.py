@@ -4,10 +4,12 @@ import logging
 import hashlib
 from typing import List, Optional
 import numpy as np
+# pyrefly: ignore [missing-import]
 import faiss
 
 from ..VectorDBInterface import VectorDBInterface
 from ..VectorDBEnums import DistanceMethodEnums
+# pyrefly: ignore [missing-import]
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
@@ -248,6 +250,7 @@ class FaissDBProvider(VectorDBInterface):
         vector: list,
         limit: int = 5,
         score_threshold: float = None,
+        **kwargs,
     ):
         if not self._load_collection(collection_name):
             return []
@@ -295,6 +298,7 @@ class FaissDBProvider(VectorDBInterface):
         vector: list,
         limit: int = 5,
         semantic_weight: float = 0.6,
+        **kwargs,
     ):
         """Hybrid search using Reciprocal Rank Fusion (RRF)."""
         try:

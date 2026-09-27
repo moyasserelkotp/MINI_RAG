@@ -36,10 +36,12 @@ class GetConversationContextTool(BaseTool):
             return {"error": "No session ID provided. Cannot retrieve memory."}
             
         try:
-            session_obj, session_messages, entities_text = await self.memory_service.prepare_session(
+            session_obj, session_messages, session_model, message_model = await self.memory_service.prepare_session(
                 session_id=self.session_id,
                 project_id=self.project_id,
-                query="[TOOL_GET_MEMORY]" 
+                use_window=True,
+                use_summary=True,
+                window_k=10
             )
             
             messages_formatted = []
@@ -55,7 +57,7 @@ class GetConversationContextTool(BaseTool):
                 "session_id": self.session_id,
                 "summary": session_obj.summary if session_obj else None,
                 "recent_messages": messages_formatted,
-                "entities": entities_text if entities_text else None
+                "entities": None
             }
         except Exception as e:
             logger.error(f"GetConversationContextTool error: {e}")

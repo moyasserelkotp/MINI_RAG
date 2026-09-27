@@ -2,7 +2,9 @@ import os
 import hashlib
 import logging
 from typing import List, Optional
+# pyrefly: ignore [missing-import]
 import chromadb
+# pyrefly: ignore [missing-import]
 from rank_bm25 import BM25Okapi
 
 from ..VectorDBInterface import VectorDBInterface
@@ -180,6 +182,7 @@ class ChromaDBProvider(VectorDBInterface):
         vector: list,
         limit: int = 5,
         score_threshold: float = None,
+        **kwargs,
     ):
         if not self.client:
             self.connect()
@@ -226,6 +229,7 @@ class ChromaDBProvider(VectorDBInterface):
         vector: list,
         limit: int = 5,
         semantic_weight: float = 0.6,
+        **kwargs,
     ):
         """Hybrid search using Reciprocal Rank Fusion (RRF)."""
         try:

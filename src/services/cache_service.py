@@ -54,7 +54,7 @@ class CacheService:
             getattr(self.embedding_client, "model_id", "unknown")
         )
         lang = getattr(self.app_settings, "PRIMARY_LANG", "en")
-        prompt_version = "v1"
+        prompt_version = getattr(self.app_settings, "CACHE_PROMPT_VERSION", "v1")
 
         canonical = "|".join([
             str(project_id),

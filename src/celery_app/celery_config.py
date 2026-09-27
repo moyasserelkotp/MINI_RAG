@@ -2,33 +2,29 @@ from __future__ import annotations
 
 import os
 import logging
+# pyrefly: ignore [missing-import]
 from celery import Celery
+# pyrefly: ignore [missing-import]
 from kombu import Exchange, Queue
 
 logger = logging.getLogger(__name__)
 
 #  Connection URLs (read from env with sane defaults) 
 def _broker_url() -> str:
-    try:
-        user     = os.environ["RABBITMQ_DEFAULT_USER"]
-        password = os.environ["RABBITMQ_DEFAULT_PASS"]
-        host     = os.getenv("RABBITMQ_HOST", "rabbitmq")
-        port     = os.getenv("RABBITMQ_PORT", "5672")
-        vhost    = os.getenv("RABBITMQ_VHOST", "minirag_vhost")
-        return f"amqp://{user}:{password}@{host}:{port}/{vhost}"
-    except KeyError as e:
-        raise ValueError(f"Missing required RabbitMQ environment variable for Celery: {e}")
+    user     = os.getenv("RABBITMQ_DEFAULT_USER", "guest")
+    password = os.getenv("RABBITMQ_DEFAULT_PASS", "guest")
+    host     = os.getenv("RABBITMQ_HOST", "localhost")
+    port     = os.getenv("RABBITMQ_PORT", "5672")
+    vhost    = os.getenv("RABBITMQ_VHOST", "/")
+    return f"amqp://{user}:{password}@{host}:{port}/{vhost}"
 
 
 def _result_backend() -> str:
-    try:
-        password = os.environ["REDIS_PASSWORD"]
-        host     = os.getenv("REDIS_HOST", "redis")
-        port     = os.getenv("REDIS_PORT", "6379")
-        db       = os.getenv("REDIS_CELERY_DB", "1")       
-        return f"redis://:{password}@{host}:{port}/{db}"
-    except KeyError as e:
-        raise ValueError(f"Missing required Redis environment variable for Celery: {e}")
+    password = os.getenv("REDIS_PASSWORD", "")
+    host     = os.getenv("REDIS_HOST", "localhost")
+    port     = os.getenv("REDIS_PORT", "6379")
+    db       = os.getenv("REDIS_CELERY_DB", "1")       
+    return f"redis://:{password}@{host}:{port}/{db}"
 
 
 #  Exchange & Queue definitions 
@@ -98,7 +94,12 @@ def create_celery_app() -> Celery:
         #  Startup connection retry (required for Celery 6.0+ compatibility)
         broker_connection_retry_on_startup=True,
         #  Beat schedule (optional periodic tasks) 
-        beat_schedule={},
+        beat_schedule={
+            "dead-letter-monitor": {
+                "task": "celery_app.celery_config.monitor_dead_letters",
+                "schedule": 300,  # every 5 minutes
+            }
+        },
     )
 
     logger.info(

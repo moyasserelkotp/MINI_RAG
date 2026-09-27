@@ -230,6 +230,7 @@ class NLPController(BaseController):
                     limit=limit,
                     semantic_weight=semantic_weight,
                     fetch_limit=fetch_limit,  # Pass the external fetch_limit through
+                    metadata_filter=metadata_filter,
                 )
             else:
                 results = self.vectordb_client.search_by_vector(
@@ -237,6 +238,7 @@ class NLPController(BaseController):
                     vector=vector,
                     limit=fetch_limit or limit,  # Use fetch_limit for pure vector search too
                     score_threshold=threshold if threshold > 0 else None,
+                    metadata_filter=metadata_filter,
                 )
             duration = time.monotonic() - start
             try:

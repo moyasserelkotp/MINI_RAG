@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 import time
 from typing import Optional
-
+# pyrefly: ignore [missing-import]
 from celery import Task
+# pyrefly: ignore [missing-import]
 from bson.objectid import ObjectId
+# pyrefly: ignore [missing-import]
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from celery_app.celery_config import celery_app
@@ -97,6 +99,11 @@ def process_project_files(
         "Task %s | START process_project_files | project=%s file=%s",
         task_id, project_id, file_id,
     )
+    
+    import re
+    if not re.match(r"^[a-zA-Z0-9_-]{1,64}$", project_id):
+        logger.error("Task %s | Invalid project_id format: %s", task_id, project_id)
+        return {"signal": "INVALID_PROJECT_ID", "error": "Invalid project_id format"}
 
     settings = get_settings()
 

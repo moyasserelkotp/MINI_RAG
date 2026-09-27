@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
     app.initialized_collections = set()
     app.llm_semaphore = asyncio.Semaphore(10)
 
-    from controllers import AgentController
+    from controllers import AgentController, NLPController
     app.agent_controller = AgentController(
         db_client=app.db_client,
         vectordb_client=app.vectordb_client,
@@ -110,6 +110,18 @@ async def lifespan(app: FastAPI):
     )
     await app.agent_controller.init_collections()
     logger.info("AgentController initialised and cached on app state.")
+
+    app.nlp_controller = NLPController(
+        db_client=app.db_client,
+        vectordb_client=app.vectordb_client,
+        generation_client=app.generation_client,
+        embedding_client=app.embedding_client,
+        template_parser=app.template_parser,
+        cohere_client=app.cohere_client,
+        initialized_collections=app.initialized_collections,
+        llm_semaphore=app.llm_semaphore,
+    )
+    logger.info("NLPController initialised and cached on app state.")
 
     logger.info("Startup complete — ready to serve requests.")
     yield

@@ -182,6 +182,7 @@ class Settings(BaseSettings):
     CACHE_SIMILARITY_THRESHOLD: float = 0.95
     # TTL (seconds) for agent-path semantic cache entries. 0 = no expiry.
     CACHE_TTL_SECONDS: int = 86_400  # 24 hours
+    CACHE_PROMPT_VERSION: str = "v1"
 
     #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"
@@ -191,7 +192,7 @@ class Settings(BaseSettings):
     RABBITMQ_VHOST: str = "minirag_vhost"
 
     # Celery / Redis 
-    REDIS_HOST: str = "redis"
+    REDIS_HOST: str = "localhost"
     REDIS_PORT: str = "6379"
     REDIS_PASSWORD: str = "minirag_redis_2222"
     REDIS_CELERY_DB: str = "1"   # DB index for Celery results

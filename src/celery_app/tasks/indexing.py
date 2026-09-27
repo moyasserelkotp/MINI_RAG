@@ -4,7 +4,9 @@ import asyncio
 import logging
 from typing import Optional
 
+# pyrefly: ignore [missing-import]
 from celery import Task
+# pyrefly: ignore [missing-import]
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from celery_app.celery_config import celery_app
@@ -106,6 +108,11 @@ def index_project_into_vectordb(
         "Task %s | START index_project_into_vectordb | project=%s do_reset=%s",
         task_id, project_id, do_reset,
     )
+
+    import re
+    if not re.match(r"^[a-zA-Z0-9_-]{1,64}$", project_id):
+        logger.error("Task %s | Invalid project_id format: %s", task_id, project_id)
+        return {"signal": "INVALID_PROJECT_ID", "error": "Invalid project_id format"}
 
     settings = get_settings()
 

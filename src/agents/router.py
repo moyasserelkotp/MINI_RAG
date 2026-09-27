@@ -9,7 +9,7 @@ class AgentRouter:
     def __init__(self, llm_client, tool_registry, llm_semaphore: asyncio.Semaphore = None):
         self.llm_client = llm_client
         self.tool_registry = tool_registry
-        self._semaphore = llm_semaphore  
+        self._semaphore = llm_semaphore or asyncio.Semaphore(10)
         
     async def route(self, query: str, category: str, chat_history: list = None) -> dict:
         """
@@ -32,9 +32,6 @@ class AgentRouter:
         if category == "CONVERSATION_REFERENCE":
             return {"action": "GET_CONVERSATION_CONTEXT", "reason": "Query references previous conversation.", "tool_kwargs": {}}
             
-        # For COMPLEX_MULTI_STEP or any unhandled category, we use the LLM to decide
-        # exactly how to use the available tools.
-        
         tools_schema = self.tool_registry.get_tools_schema()
         
         schema = {
@@ -70,7 +67,7 @@ Available Tools:
         prompt += "Choose the best action and provide the necessary tool arguments."
         
         try:
-            async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+            async with self._semaphore:
                 result = await asyncio.to_thread(
                     self.llm_client.generate_structured_output,
                     prompt=prompt,

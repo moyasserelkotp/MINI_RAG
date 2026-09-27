@@ -1,5 +1,5 @@
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Request, status, HTTPException, Query, Path
-from fastapi.responses import JSONResponse
 from .schemes.project import ProjectListResponse, ProjectItem, ProjectRequest, ProjectResponse
 from .schemes.system import BaseResponse
 from models.ProjectModel import ProjectModel
@@ -76,13 +76,7 @@ async def delete_project(request: Request, project_id: str = _PROJECT_ID_PATH):
 
     # Delete vector DB collection
     try:
-        nlp_controller = NLPController(
-            db_client=request.app.db_client,
-            vectordb_client=request.app.vectordb_client,
-            generation_client=request.app.generation_client,
-            embedding_client=request.app.embedding_client,
-            template_parser=request.app.template_parser,
-        )
+        nlp_controller = request.app.nlp_controller
         import asyncio
         await asyncio.to_thread(nlp_controller.reset_vector_db_collection, project=project)
     except Exception as e:

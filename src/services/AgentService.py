@@ -215,9 +215,7 @@ class AgentService:
             for tool in update_data["tools_used"]:
                 record_agent_tool_use(tool)
 
-            # Optional Memory save
-            if session_id and update_data["status"] == "success":
-                await self.memory_service.save_messages(query, final_state.get("final_answer"), session_id)
+
 
             # FIX-7: Save to semantic cache on success
             if use_cache and not chat_history and query_emb and final_state.get("final_answer") and update_data["status"] == "success":

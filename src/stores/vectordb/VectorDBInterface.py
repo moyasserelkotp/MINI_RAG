@@ -58,7 +58,7 @@ class VectorDBInterface(ABC):
         pass
 
     @abstractmethod
-    def search_by_vector(self, collection_name: str, vector: list, limit: int):
+    def search_by_vector(self, collection_name: str, vector: list, limit: int, **kwargs):
         pass
 
     @abstractmethod
@@ -69,5 +69,6 @@ class VectorDBInterface(ABC):
         vector: list,
         limit: int,
         semantic_weight: float = 0.7,
+        **kwargs
     ):
         pass

@@ -19,7 +19,7 @@ REQUEST_LATENCY = Histogram(
 
 # Retrieval Metrics
 RETRIEVAL_LATENCY = Histogram(
-    "rag_retrieval_duration_seconds", "Vector DB retrieval latency", ["project_id"]
+    "rag_retrieval_duration_seconds", "Vector DB retrieval latency"
 )
 CHUNKS_RETRIEVED = Histogram(
     "rag_chunks_retrieved_total", "Number of chunks retrieved per query", []
@@ -46,15 +46,15 @@ AGENT_TOOL_USE = Counter(
 
 # Cache Metrics
 CACHE_HITS = Counter(
-    "rag_cache_hits_total", "Semantic cache hits", ["project_id"]
+    "rag_cache_hits_total", "Semantic cache hits"
 )
 CACHE_MISSES = Counter(
-    "rag_cache_misses_total", "Semantic cache misses", ["project_id"]
+    "rag_cache_misses_total", "Semantic cache misses"
 )
 
 # Processing Metrics
 DOCUMENTS_PROCESSED = Counter(
-    "rag_documents_processed_total", "Documents processed and indexed", ["project_id"]
+    "rag_documents_processed_total", "Documents processed and indexed"
 )
 CHUNKING_LATENCY = Histogram(
     "rag_chunking_duration_seconds", "Document chunking duration", ["strategy"]
@@ -62,7 +62,7 @@ CHUNKING_LATENCY = Histogram(
 
 # Error Metrics
 RETRIEVAL_ERRORS = Counter(
-    "rag_retrieval_errors_total", "Retrieval failures", ["project_id"]
+    "rag_retrieval_errors_total", "Retrieval failures"
 )
 GENERATION_ERRORS = Counter(
     "rag_generation_errors_total", "Generation failures", ["backend"]
@@ -122,7 +122,7 @@ def setup_metrics(app: FastAPI):
 # Helper functions for easy metric recording
 def record_retrieval_latency(project_id: str, duration: float):
     """Record vector DB retrieval latency"""
-    RETRIEVAL_LATENCY.labels(project_id=project_id).observe(duration)
+    RETRIEVAL_LATENCY.observe(duration)
 
 def record_chunks_retrieved(project_id: str, count: int):
     """Record number of chunks retrieved (project_id kept as parameter for API compat)"""
@@ -140,11 +140,11 @@ def record_agent_tool_use(tool_name: str):
 
 def record_cache_hit(project_id: str):
     """Record cache hit"""
-    CACHE_HITS.labels(project_id=project_id).inc()
+    CACHE_HITS.inc()
 
 def record_cache_miss(project_id: str):
     """Record cache miss"""
-    CACHE_MISSES.labels(project_id=project_id).inc()
+    CACHE_MISSES.inc()
 
 def record_generation_latency(backend: str, duration: float):
     """Record LLM generation latency"""
@@ -156,7 +156,7 @@ def record_generation_tokens(backend: str, tokens: int):
 
 def record_document_processed(project_id: str, count: int = 1):
     """Record documents processed"""
-    DOCUMENTS_PROCESSED.labels(project_id=project_id).inc(count)
+    DOCUMENTS_PROCESSED.inc(count)
 
 def record_chunking_latency(strategy: str, duration: float):
     """Record chunking operation latency"""
@@ -164,7 +164,7 @@ def record_chunking_latency(strategy: str, duration: float):
 
 def record_retrieval_error(project_id: str):
     """Record retrieval error"""
-    RETRIEVAL_ERRORS.labels(project_id=project_id).inc()
+    RETRIEVAL_ERRORS.inc()
 
 def record_generation_error(backend: str):
     """Record generation error"""

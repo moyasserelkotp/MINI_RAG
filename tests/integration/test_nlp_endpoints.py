@@ -1,7 +1,11 @@
+# pyrefly: ignore [missing-import]
 import pytest
+# pyrefly: ignore [missing-import]
 from fastapi.testclient import TestClient
+# pyrefly: ignore [missing-import]
 from main import app
 from unittest.mock import AsyncMock, MagicMock
+# pyrefly: ignore [missing-import]
 from helpers.config import get_settings
 
 class FakeProject:
@@ -18,6 +22,9 @@ def client():
     app.generation_client = MagicMock()
     app.embedding_client = MagicMock()
     app.template_parser = MagicMock()
+    app.initialized_collections = set()
+    import asyncio
+    app.llm_semaphore = asyncio.Semaphore(10)
     return TestClient(app)
 
 def test_nlp_info_index_success(client, mocker):

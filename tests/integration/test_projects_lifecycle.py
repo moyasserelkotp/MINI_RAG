@@ -18,6 +18,7 @@ def client():
     app.generation_client = MagicMock()
     app.embedding_client = MagicMock()
     app.template_parser = MagicMock()
+    app.cohere_client = MagicMock()
     return TestClient(app)
 
 def test_create_project_success(client, mocker):

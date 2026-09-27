@@ -14,7 +14,6 @@ services:
       - 1.1.1.1
     volumes:
       - fastapi_data:/app/assets
-      - ../src:/app           # live reload: code changes apply without rebuild
     networks:
       - backend
     restart: always
@@ -64,7 +63,6 @@ services:
       --max-tasks-per-child=50
     volumes:
       - fastapi_data:/app/assets
-      - ../src:/app           # live reload
     networks:
       - backend
     restart: always
@@ -96,7 +94,6 @@ services:
       --max-tasks-per-child=20
     volumes:
       - fastapi_data:/app/assets
-      - ../src:/app           # live reload
     networks:
       - backend
     restart: always
@@ -114,24 +111,24 @@ services:
 
   # Celery Beat — Periodic task scheduler
   # NOTE: Disabled — beat_schedule is empty. Re-enable when periodic tasks are added.
-  # celery-beat:
-  #   image: minirag-celery
-  #   pull_policy: never
-  #   container_name: celery-beat
-  #   command: >
-  #     celery -A celery_app.celery_config:celery_app beat
-  #     --loglevel=info
-  #     --scheduler celery.beat:PersistentScheduler
-  #   networks:
-  #     - backend
-  #   restart: always
-  #   depends_on:
-  #     rabbitmq:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   env_file:
-  #     - ./env/.env.app
+  celery-beat:
+    image: minirag-celery
+    pull_policy: never
+    container_name: celery-beat
+    command: >
+      celery -A celery_app.celery_config:celery_app beat
+      --loglevel=info
+      --scheduler celery.beat:PersistentScheduler
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./env/.env.app
 
 
   # Flower — Celery monitoring UI

@@ -20,8 +20,8 @@ class AgentState(TypedDict):
 
     # Planning
     plan: List[Dict[str, Any]]
-    current_plan_step: int        # Index into `plan`; advanced by planner/retrieval nodes
-    next_action: Optional[str]    # Planner's intended next tool action
+    current_plan_step: int        
+    next_action: Optional[str]    
 
     # Tool execution
     selected_tool: Optional[str]
@@ -34,7 +34,7 @@ class AgentState(TypedDict):
 
     # Evaluation
     evaluation_result: Optional[Dict[str, Any]]
-    rewrite_count: int            # How many query rewrites have been attempted
+    rewrite_count: int           
 
     # Output
     final_answer: Optional[str]

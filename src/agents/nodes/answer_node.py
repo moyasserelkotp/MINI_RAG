@@ -50,7 +50,7 @@ User Question: {query}
 """
         try:
             # FIX-2: acquire semaphore slot before the final answer LLM call
-            _sem = llm_semaphore if llm_semaphore else asyncio.Semaphore(9999)
+            _sem = llm_semaphore or asyncio.Semaphore(10)
             async with _sem:
                 response = await asyncio.to_thread(
                     llm_client.generate_structured_output,

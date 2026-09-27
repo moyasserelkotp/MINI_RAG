@@ -1,7 +1,11 @@
+# pyrefly: ignore [missing-import]
 import pytest
+# pyrefly: ignore [missing-import]
 from fastapi.testclient import TestClient
+# pyrefly: ignore [missing-import]
 from main import app
 from unittest.mock import AsyncMock, MagicMock
+# pyrefly: ignore [missing-import]
 from helpers.config import get_settings
 from datetime import datetime
 
@@ -25,6 +29,7 @@ def client():
     settings.ENABLE_AUTH = False
     app.db_client = AsyncMock()
     app.vectordb_client = MagicMock()
+    app.cohere_client = MagicMock()
     return TestClient(app)
 
 def test_list_assets_success(client, mocker):
@@ -44,7 +49,7 @@ def test_list_assets_success(client, mocker):
 
 def test_delete_asset_success(client, mocker):
     mock_project_model = AsyncMock()
-    mock_project_model.get_project_or_create_one.return_value = FakeProject(id="proj-1-id", project_id="proj-1")
+    mock_project_model.get_project_by_id.return_value = FakeProject(id="proj-1-id", project_id="proj-1")
     mocker.patch("routes.data.ProjectModel.create_instance", return_value=mock_project_model)
     
     mock_asset_model = AsyncMock()
@@ -65,7 +70,7 @@ def test_delete_asset_success(client, mocker):
 
 def test_delete_asset_forbidden_cross_project(client, mocker):
     mock_project_model = AsyncMock()
-    mock_project_model.get_project_or_create_one.return_value = FakeProject(id="proj-2-id", project_id="proj-2")
+    mock_project_model.get_project_by_id.return_value = FakeProject(id="proj-2-id", project_id="proj-2")
     mocker.patch("routes.data.ProjectModel.create_instance", return_value=mock_project_model)
     
     mock_asset_model = AsyncMock()

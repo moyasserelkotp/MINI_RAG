@@ -11,7 +11,7 @@ class RetrievalEvaluator:
         self.llm_client = llm_client
         self.score_threshold = score_threshold
         self._settings = get_settings()
-        self._semaphore = llm_semaphore  # FIX-2
+        self._semaphore = llm_semaphore or asyncio.Semaphore(10)  # FIX-2
 
     async def evaluate(self, query: str, retrieved_context: list, query_category: str = None) -> dict:
         """
@@ -79,7 +79,7 @@ Retrieved Context:
 """
         try:
             # FIX-2: acquire semaphore slot before LLM call
-            async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+            async with self._semaphore:
                 result = await asyncio.to_thread(
                     self.llm_client.generate_structured_output,
                     prompt=prompt,
