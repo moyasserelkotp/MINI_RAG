@@ -12,9 +12,6 @@ class WebSearchTool(BaseTool):
     def __init__(self, max_results: int = 5):
         self._max_results = max_results
         self._settings = get_settings()
-        # FIX-1: Create the client once in __init__, not on every execute() call.
-        # Creating AsyncTavilyClient per-call opens a new HTTP session each time,
-        # causing connection overhead and potential resource leaks under load.
         self._client: Optional[Any] = self._init_client()
 
     def _init_client(self) -> Optional[Any]:

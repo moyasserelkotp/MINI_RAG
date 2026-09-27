@@ -35,17 +35,6 @@ class AgentQueryResponse(BaseModel):
 # pyrefly: ignore [missing-import]
 from fastapi import Request
 
-def _make_agent_controller(request: Request) -> AgentController:
-    return AgentController(
-        db_client=request.app.db_client,
-        vectordb_client=request.app.vectordb_client,
-        generation_client=request.app.generation_client,
-        embedding_client=request.app.embedding_client,
-        template_parser=request.app.template_parser,
-        cohere_client=getattr(request.app, "cohere_client", None),
-        initialized_collections=request.app.initialized_collections,
-        llm_semaphore=getattr(request.app, "llm_semaphore", None),
-    )
 
 @agent_router.post("/query", response_model=AgentQueryResponse)
 async def query_agent(

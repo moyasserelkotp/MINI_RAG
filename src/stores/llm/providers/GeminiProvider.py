@@ -13,7 +13,7 @@ class GeminiProvider(LLMInterface):
     def __init__(
         self,
         api_key: str,
-        default_input_max_characters: int = 1024,
+        default_input_max_characters: int = 32_768,  # FIX: was 1024 — silently cut off all retrieved context
         default_generation_max_output_tokens: int = 512,
         default_generation_temperature: float = 0.1,
     ):

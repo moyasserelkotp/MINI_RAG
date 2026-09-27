@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 from .base import BaseTool
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +60,50 @@ class SearchDocumentsTool(BaseTool):
         score_threshold = kwargs.get("score_threshold")
         filter_metadata = kwargs.get("filter_metadata")
         
+        # 1. Generate query variations for Multi-Query Search
+        queries = [query]
+        try:
+            # We use the generation client to get variations
+            schema = {
+                "type": "object",
+                "properties": {
+                    "variations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Up to 3 variations of the original search query."
+                    }
+                },
+                "required": ["variations"]
+            }
+            
+            prompt = f"""You are an AI assistant tasked with generating search queries to improve retrieval from a vector database.
+Your goal is to generate up to 3 variations of the given user query. These variations should use different keywords, synonyms, or rephrasings to capture the same intent but match different potential documents.
+Do not answer the query, just return the variations.
+
+Original Query: "{query}"
+"""
+            result = await asyncio.to_thread(
+                self.nlp_controller.generation_client.generate_structured_output,
+                prompt=prompt,
+                schema=schema
+            )
+            
+            if result and "variations" in result:
+                variations = result.get("variations", [])
+                if isinstance(variations, list):
+                    # Filter out empty strings and exact duplicates
+                    valid_variations = [v for v in variations if isinstance(v, str) and v.strip() and v.strip().lower() != query.lower()]
+                    queries.extend(valid_variations[:3])
+                    
+            logger.info(f"Multi-Query Search will use {len(queries)} queries: {queries}")
+        except Exception as e:
+            logger.warning(f"Failed to generate query variations, falling back to original query: {e}")
+        
         try:
             docs, sources = await self.retrieval_service.retrieve_and_rerank_context(
                 search_function=self.nlp_controller.search_vector_db_collection,
                 project=self.project,
-                search_query=query,
+                search_query=queries,
                 limit=limit,
                 use_hybrid=True,
                 score_threshold=score_threshold,

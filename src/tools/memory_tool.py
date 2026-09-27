@@ -36,12 +36,10 @@ class GetConversationContextTool(BaseTool):
             return {"error": "No session ID provided. Cannot retrieve memory."}
             
         try:
-            # We use prepare_session which gets window and summary memory
-            # The tool itself just returns the raw data for the agent to review
             session_obj, session_messages, entities_text = await self.memory_service.prepare_session(
                 session_id=self.session_id,
                 project_id=self.project_id,
-                query="[TOOL_GET_MEMORY]" # Placeholder query
+                query="[TOOL_GET_MEMORY]" 
             )
             
             messages_formatted = []

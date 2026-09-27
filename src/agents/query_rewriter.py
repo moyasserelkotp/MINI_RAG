@@ -6,8 +6,9 @@ logger = logging.getLogger(__name__)
 class QueryRewriter:
     """Rewrites queries for better retrieval."""
     
-    def __init__(self, llm_client):
+    def __init__(self, llm_client, llm_semaphore: asyncio.Semaphore = None):
         self.llm_client = llm_client
+        self._semaphore = llm_semaphore  # FIX: cap concurrent LLM calls
         
     async def rewrite(self, query: str, chat_history: list = None) -> str:
         """
@@ -36,12 +37,14 @@ If the query is already standalone, return it as is. Do NOT answer the query.
 Follow-up Query: "{query}"
 """
         try:
-            result = await asyncio.to_thread(
-                self.llm_client.generate_structured_output,
-                prompt=prompt,
-                schema=schema,
-                chat_history=chat_history
-            )
+            # FIX: acquire semaphore slot before LLM call
+            async with (self._semaphore if self._semaphore else asyncio.Semaphore(9999)):
+                result = await asyncio.to_thread(
+                    self.llm_client.generate_structured_output,
+                    prompt=prompt,
+                    schema=schema,
+                    chat_history=chat_history
+                )
             
             if result and "rewritten_query" in result:
                 return result["rewritten_query"]

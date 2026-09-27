@@ -18,7 +18,8 @@ class QueryClassifier:
         self.web_search_keywords = [
             "latest", "recent", "news", "today", "current price", "stock price",
             "weather", "live", "right now", "breaking", "2024", "2025", "2026",
-            "who won", "what happened", "trending"
+            "who won", "what happened", "trending", "google", "search the web",
+            "search internet", "search online"
         ]
         
     async def classify(self, query: str) -> str:

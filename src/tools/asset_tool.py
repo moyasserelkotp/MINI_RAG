@@ -39,12 +39,6 @@ class ListProjectAssetsTool(BaseTool):
         asset_type = kwargs.get("asset_type")
         
         try:
-            # We need the ObjectId for the project to query assets. 
-            # If asset_model expects ObjectId, we must provide it. 
-            # In asset_model.get_all_project_assets it calls _resolve_project_id so string is fine.
-            # But get_all_project_assets REQUIRES asset_type. Wait, we should fetch all if not provided.
-            # I will modify how we query to allow all.
-            
             query = {"asset_project_id": self.asset_model._resolve_project_id(self.project_id)}
             if asset_type:
                 query["asset_type"] = asset_type

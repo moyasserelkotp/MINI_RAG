@@ -1,5 +1,6 @@
 from ..LLMInterface import LLMInterface
 from ..LLMEnums import OpenAIEnums
+# pyrefly: ignore [missing-import]
 from openai import OpenAI
 import logging
 from typing import List, Optional
@@ -13,7 +14,7 @@ class OpenAIProvider(LLMInterface):
         self,
         api_key: str,
         api_url: str = None,
-        default_input_max_characters: int = 1024,
+        default_input_max_characters: int = 16_384,  # FIX: was 1024 — silently cut off all retrieved context
         default_generation_max_output_tokens: int = 512,
         default_generation_temperature: float = 0.1,
     ):

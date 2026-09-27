@@ -59,7 +59,7 @@ class AgentService:
 
         threshold = getattr(self.app_settings, "AGENT_SCORE_THRESHOLD", 0.7)
         self.evaluator = RetrievalEvaluator(self.llm_client, score_threshold=threshold)
-        self.rewriter = QueryRewriter(self.llm_client)
+        self.rewriter = QueryRewriter(self.llm_client, self.llm_semaphore)
 
     # -----------------------------------------------------------------
     # FIX-2: context manager that acquires the semaphore before any
@@ -111,10 +111,12 @@ class AgentService:
                     )
                     if cached_ans:
                         # Update run status to cached
-                        agent_run.status = "completed"
                         await self.agent_run_model.update_agent_run(run_id, {"status": "completed"})
                         return {
                             "answer": cached_ans,
+                            "sources": [],
+                            "run_id": run_id,
+                            "steps": 0,
                             "metadata": {"cached": True, "agent_path": True}
                         }
                 except Exception as e:

@@ -100,9 +100,9 @@ class Settings(BaseSettings):
 
     #  Vector DB 
     VECTOR_DB_BACKEND: str
-    VECTOR_DB_URL: Optional[str] = None          # Set to http://localhost:6333 for Docker/server mode
-    VECTOR_DB_API_KEY: Optional[str] = None       # Only needed for Qdrant Cloud or secured servers
-    VECTOR_DB_PATH: str = "qdrant_db"             # Used only when VECTOR_DB_URL is not set (local mode)
+    VECTOR_DB_URL: Optional[str] = None         
+    VECTOR_DB_API_KEY: Optional[str] = None       
+    VECTOR_DB_PATH: str = "qdrant_db"            
     VECTOR_DB_DISTANCE_METHOD: Optional[str] = "cosine"
     VECTOR_DB_COLLECTION_PREFIX: str = "collection"
     PINECONE_API_KEY: Optional[str] = None
@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     USE_SEMANTIC_CACHE: bool = True
     SEMANTIC_CACHE_TTL_SECONDS: int = 86_400   # RAG-01: 24 h default; set 0 to disable TTL
 
-    # ─── Agent Settings ────────────────────────────────────────────────────────
+    #  Agent Settings 
     # Master switch — set to False to disable all agentic endpoints
     AGENT_ENABLED: bool = True
 
@@ -155,17 +155,33 @@ class Settings(BaseSettings):
     MAX_RETRIEVAL_ATTEMPTS: int = 3
     MAX_TOOL_CALLS: int = 10
 
+    # Hard wall-clock timeout for a single agent graph execution (seconds).
+    # Prevents runaway requests from tying up resources indefinitely.
+    AGENT_TIMEOUT_SECONDS: int = 60
+
     # Feature flags
     ENABLE_QUERY_REWRITE: bool = True
-    ENABLE_RETRIEVAL_EVALUATION: bool = True
+    # When True, an LLM judges retrieval quality — adds ~1-2s per turn.
+    # Only fires for COMPLEX_MULTI_STEP queries even when True.
+    # Set False to rely on the fast deterministic score check only.
+    ENABLE_RETRIEVAL_EVALUATION: bool = False
     ENABLE_QUERY_PLANNING: bool = True
     ENABLE_AGENT_TRACING: bool = True  # persist agent run traces in MongoDB
 
     # Minimum retrieval quality score to consider results sufficient (0.0–1.0)
     AGENT_SCORE_THRESHOLD: float = 0.35
 
-    # Web Search Tool — uses DuckDuckGo (no API key required)
+    # Web Search Tool — uses Tavily (TAVILY_API_KEY required)
     ENABLE_WEB_SEARCH: bool = True
+
+    # Semantic cache for the agent path (mirrors NLP path cache behaviour)
+    # When True, identical/near-identical queries skip the full agent graph.
+    ENABLE_SEMANTIC_CACHE: bool = True
+    # Cosine-similarity threshold for agent cache hits (0.0–1.0).
+    # Higher = stricter matching; 0.95 returns cached answer only for near-identical queries.
+    CACHE_SIMILARITY_THRESHOLD: float = 0.95
+    # TTL (seconds) for agent-path semantic cache entries. 0 = no expiry.
+    CACHE_TTL_SECONDS: int = 86_400  # 24 hours
 
     #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"
@@ -182,8 +198,6 @@ class Settings(BaseSettings):
     REDIS_CACHE_DB: str = "0"    # DB index for app-level cache
 
     # CORS 
-    # FIX: restrict allowed origins; wildcard '*' is unsafe in production
-    # Set to ["*"] only for local development; list specific domains in prod
     CORS_ALLOWED_ORIGINS: Union[List[str], str] = []
 
     @validator("CORS_ALLOWED_ORIGINS", pre=True)

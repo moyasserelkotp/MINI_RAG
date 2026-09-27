@@ -43,7 +43,7 @@ class RetrievalService:
         self,
         search_function,
         project,
-        search_query: str,
+        search_query: str | List[str],
         limit: int,
         use_hybrid: bool,
         score_threshold: Optional[float],
@@ -57,6 +57,8 @@ class RetrievalService:
           2. Optionally rerank with Cohere Reranker over all candidates.
           3. Return top `limit` documents and their source metadata.
 
+        Supports multi-query generation: if `search_query` is a list, it will
+        execute searches for all queries in parallel and pool the results before reranking.
         Sources are built AFTER reranking so the returned list exactly matches
         the documents actually passed to the LLM.
         """
@@ -74,19 +76,46 @@ class RetrievalService:
         else:
             fetch_k = limit
 
-        retrieved_documents = await asyncio.to_thread(
-            search_function,
-            project=project,
-            text=search_query,
-            limit=limit,           # used for hybrid fusion slice
-            use_hybrid=use_hybrid,
-            score_threshold=score_threshold,
-            metadata_filter=metadata_filter,
-            fetch_limit=fetch_k,   # actual candidate pool size passed to the DB
-        )
+        queries = search_query if isinstance(search_query, list) else [search_query]
+        original_query = queries[0]
 
-        if retrieved_documents is None:
-            return [], []
+        async def _run_search(q: str):
+            return await asyncio.to_thread(
+                search_function,
+                project=project,
+                text=q,
+                limit=limit,           # used for hybrid fusion slice
+                use_hybrid=use_hybrid,
+                score_threshold=score_threshold,
+                metadata_filter=metadata_filter,
+                fetch_limit=fetch_k,   # actual candidate pool size passed to the DB
+            )
+
+        # Run all queries in parallel
+        all_results = await asyncio.gather(*[_run_search(q) for q in queries])
+        
+        # Deduplicate pooled candidates based on record_id, keeping the highest score
+        deduped = {}
+        for res_list in all_results:
+            if not res_list:
+                continue
+            for doc in res_list:
+                doc_id = getattr(doc, "id", None)
+                if doc_id is None:
+                    # Fallback to text hash if no ID
+                    text = doc.payload.get("text", "")
+                    doc_id = hash(text)
+                    
+                if doc_id not in deduped:
+                    deduped[doc_id] = doc
+                else:
+                    # Keep the one with the highest score
+                    existing_score = getattr(deduped[doc_id], "score", 0.0)
+                    new_score = getattr(doc, "score", 0.0)
+                    if new_score > existing_score:
+                        deduped[doc_id] = doc
+                        
+        retrieved_documents = list(deduped.values())
 
         if not retrieved_documents:
             return [], []
@@ -103,7 +132,7 @@ class RetrievalService:
                     reranked = await asyncio.to_thread(
                         cohere_client.rerank,
                         model=rerank_model,
-                        query=search_query,
+                        query=original_query,
                         documents=docs_texts,
                         top_n=min(limit, len(docs_texts)),
                     )
@@ -117,7 +146,7 @@ class RetrievalService:
                     retrieved_documents = reranked_docs
                     logger.info(
                         "Reranked %d candidates → %d final docs for query: %s",
-                        len(docs_texts), len(retrieved_documents), search_query[:80],
+                        len(docs_texts), len(retrieved_documents), original_query[:80],
                     )
                 except Exception as e:
                     logger.error("Cohere Rerank failed: %s — using pre-rerank order", e)

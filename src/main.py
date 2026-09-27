@@ -94,14 +94,9 @@ async def lifespan(app: FastAPI):
             logger.warning("Could not initialise Cohere client: %s", exc)
 
     # Shared per-worker state
-    # initialized_collections — skips Qdrant round-trip after first request
     app.initialized_collections = set()
-    # llm_semaphore — caps concurrent LLM API calls to avoid provider rate limits
     app.llm_semaphore = asyncio.Semaphore(10)
 
-    # FIX-3: Create AgentController ONCE at startup rather than per-request.
-    # The controller holds stateless service objects; project/session context
-    # flows through the state dict and method arguments, so it is safe to share.
     from controllers import AgentController
     app.agent_controller = AgentController(
         db_client=app.db_client,
@@ -163,7 +158,6 @@ app = FastAPI(
 )
 
 #  Middleware (registration order matters — last added = outermost) 
-
 try:
     add_prometheus_middleware(app)
 except Exception as exc:
