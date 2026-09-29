@@ -57,6 +57,15 @@
 - **Flexible Chunking**: 6 strategies (fixed, overlapping, recursive, semantic, etc.)
 - **Context Awareness**: Automatically reformulate follow-up questions
 
+### 🌐 Live Web Search Integration
+- **Tavily Fallback**: Automatically searches the web for live data when internal documents lack the answer
+- **Agent Tooling**: Seamlessly augments retrieved context with current internet data
+
+### ⚙️ Advanced Agentic Workflow
+- **Graph-Based Routing**: Intelligent decision nodes determine when to retrieve, search, or evaluate
+- **Built-in Evaluation Nodes**: Validates and scores retrieved data for relevance and hallucination before answering
+- **Async Processing**: Uses Celery task queues for high-performance background processing
+
 ### 🌍 Multilingual & Provider-Agnostic
 
 ```env
