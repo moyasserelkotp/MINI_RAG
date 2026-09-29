@@ -1,5 +1,5 @@
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, Request, status, HTTPException
-from fastapi.responses import JSONResponse
 from helpers.config import get_settings, Settings
 from .schemes.system import WelcomeResponse, InfoResponse, HealthResponse, HealthDetailedResponse
 

@@ -1,5 +1,5 @@
 # pyrefly: ignore [missing-import]
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 # pyrefly: ignore [missing-import]
 from fastapi import FastAPI, Request, Response
 # pyrefly: ignore [missing-import]
@@ -120,11 +120,11 @@ def setup_metrics(app: FastAPI):
 
 
 # Helper functions for easy metric recording
-def record_retrieval_latency(project_id: str, duration: float):
+def record_retrieval_latency(duration: float):
     """Record vector DB retrieval latency"""
     RETRIEVAL_LATENCY.observe(duration)
 
-def record_chunks_retrieved(project_id: str, count: int):
+def record_chunks_retrieved(count: int):
     """Record number of chunks retrieved (project_id kept as parameter for API compat)"""
     CHUNKS_RETRIEVED.observe(count)
 
@@ -138,11 +138,11 @@ def record_agent_tool_use(tool_name: str):
     """Record a single tool invocation."""
     AGENT_TOOL_USE.labels(tool_name=tool_name).inc()
 
-def record_cache_hit(project_id: str):
+def record_cache_hit():
     """Record cache hit"""
     CACHE_HITS.inc()
 
-def record_cache_miss(project_id: str):
+def record_cache_miss():
     """Record cache miss"""
     CACHE_MISSES.inc()
 
@@ -154,7 +154,7 @@ def record_generation_tokens(backend: str, tokens: int):
     """Record tokens used in generation"""
     GENERATION_TOKENS.labels(backend=backend).inc(tokens)
 
-def record_document_processed(project_id: str, count: int = 1):
+def record_document_processed(count: int = 1):
     """Record documents processed"""
     DOCUMENTS_PROCESSED.inc(count)
 
@@ -162,7 +162,7 @@ def record_chunking_latency(strategy: str, duration: float):
     """Record chunking operation latency"""
     CHUNKING_LATENCY.labels(strategy=strategy).observe(duration)
 
-def record_retrieval_error(project_id: str):
+def record_retrieval_error():
     """Record retrieval error"""
     RETRIEVAL_ERRORS.inc()
 

@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field, validator
+# pyrefly: ignore [missing-import]
+from pydantic import BaseModel, Field
 from typing import Optional
+# pyrefly: ignore [missing-import]
 from bson.objectid import ObjectId
 
 

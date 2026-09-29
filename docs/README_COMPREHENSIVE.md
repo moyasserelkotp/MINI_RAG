@@ -143,6 +143,7 @@ Observability         ·  Container Orchestration  ·  Factory Patterns
 | Entity Extraction | Batch Embedding | Factory Pattern | 5 Embedding Models |
 | Conversation Summary | BM25 + Dense Hybrid | Pydantic Validation | Arabic + English |
 | Hallucination Reduction | Sub-100ms Cache Hits | Prometheus Metrics | 6 File Formats |
+| Graph-based Agent Flow | Async Task Queues (Celery) | RAG Evaluation Pipeline | Tavily Web Search |
 
 </div>
 
@@ -182,13 +183,15 @@ Observability         ·  Container Orchestration  ·  Factory Patterns
 - ✅ Local Llama via Ollama
 - ✅ HuggingFace Inference API
 
-**Infrastructure**
+**Infrastructure & Agents**
 - ✅ Docker Compose orchestration
 - ✅ Nginx reverse proxy + SSL
 - ✅ Prometheus metrics exporter
 - ✅ Grafana dashboard ready
-- ✅ Health check endpoints
-- ✅ Graceful shutdown handling
+- ✅ Graph-based agent workflow (Router, Planner, Evaluator)
+- ✅ Built-in RAG evaluation nodes
+- ✅ Live web search integration (Tavily)
+- ✅ Async background processing with Celery
 
 </details>
 

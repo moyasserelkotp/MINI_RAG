@@ -5,9 +5,9 @@ from .schemes.system import BaseResponse
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from models.AssetModel import AssetModel
-from controllers.NLPController import NLPController
 from models import ResponseSignal
 import logging
+import asyncio
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -77,7 +77,6 @@ async def delete_project(request: Request, project_id: str = _PROJECT_ID_PATH):
     # Delete vector DB collection
     try:
         nlp_controller = request.app.nlp_controller
-        import asyncio
         await asyncio.to_thread(nlp_controller.reset_vector_db_collection, project=project)
     except Exception as e:
         logger.error("Failed to delete vector collection for %s: %s", project_id, e)

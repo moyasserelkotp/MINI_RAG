@@ -1,7 +1,13 @@
+# pyrefly: ignore [missing-import]
+from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock4
+# pyrefly: ignore [missing-import]
 import pytest
+# pyrefly: ignore [missing-import]
 from fastapi.testclient import TestClient
+# pyrefly: ignore [missing-import]
 from main import app
-from unittest.mock import AsyncMock, MagicMock
+# pyrefly: ignore [missing-import]
 from helpers.config import get_settings
 
 class FakeProject:

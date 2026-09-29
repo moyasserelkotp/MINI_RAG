@@ -3,8 +3,8 @@
 Sessions are always scoped to their project. A request using project-B's ID
 can never retrieve or delete project-A's session.
 """
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Request, status, Query, HTTPException, Path
-from fastapi.responses import JSONResponse
 from models.ProjectModel import ProjectModel
 from models.SessionModel import SessionModel
 from models.MessageModel import MessageModel

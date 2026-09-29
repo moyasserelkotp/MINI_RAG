@@ -80,23 +80,9 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_ID: Optional[str] = None
     EMBEDDING_MODEL_SIZE: Optional[int] = None
 
-    # Corrected typos: DAFAULT → DEFAULT (keep old names as aliases for .env compat)
-    INPUT_DAFAULT_MAX_CHARACTERS: Optional[int] = 1024
-    GENERATION_DAFAULT_MAX_TOKENS: Optional[int] = 512
-    GENERATION_DAFAULT_TEMPERATURE: Optional[float] = 0.1
-
-    # Friendly aliases used inside code
-    @property
-    def INPUT_DEFAULT_MAX_CHARACTERS(self) -> int:
-        return self.INPUT_DAFAULT_MAX_CHARACTERS or 1024
-
-    @property
-    def GENERATION_DEFAULT_MAX_TOKENS(self) -> int:
-        return self.GENERATION_DAFAULT_MAX_TOKENS or 512
-
-    @property
-    def GENERATION_DEFAULT_TEMPERATURE(self) -> float:
-        return self.GENERATION_DAFAULT_TEMPERATURE or 0.1
+    INPUT_DEFAULT_MAX_CHARACTERS: int = 1024
+    GENERATION_DEFAULT_MAX_TOKENS: int = 512
+    GENERATION_DEFAULT_TEMPERATURE: float = 0.1
 
     #  Vector DB 
     VECTOR_DB_BACKEND: str

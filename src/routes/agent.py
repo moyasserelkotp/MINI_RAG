@@ -1,17 +1,11 @@
 # pyrefly: ignore [missing-import]
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request
 # pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 from models import ResponseSignal
-from models.db_schemes import Project
 from models.ProjectModel import ProjectModel
-from controllers import AgentController
-# pyrefly: ignore [missing-import]
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import certifi
 
 # Normally dependencies are injected. We define router logic here.
 agent_router = APIRouter(
@@ -32,15 +26,11 @@ class AgentQueryResponse(BaseModel):
     steps: Optional[int] = None
     error: Optional[str] = None
 
-# pyrefly: ignore [missing-import]
-from fastapi import Request
-
 
 @agent_router.post("/query", response_model=AgentQueryResponse)
 async def query_agent(
     request: Request,
-    payload: AgentQueryRequest,
-    background_tasks: BackgroundTasks
+    payload: AgentQueryRequest
 ):
     """
     Query the Agentic RAG system for a specific project.

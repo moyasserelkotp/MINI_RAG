@@ -80,7 +80,10 @@ def create_agent_graph(
     )
     
     workflow.add_edge("planner", "retrieval")
-    workflow.add_edge("retrieval", "evaluation")
+    if agent_mode == "ROUTER":
+        workflow.add_edge("retrieval", "answer")
+    else:
+        workflow.add_edge("retrieval", "evaluation")
     
     workflow.add_conditional_edges(
         "evaluation",

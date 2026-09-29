@@ -179,9 +179,12 @@ class ProcessController(BaseController):
 
             chunk.metadata['chunk_index'] = idx
             chunk.metadata['section'] = current_section
-            
-            # Simple content type tagging
-            if ' SAR' in chunk.page_content or '—' in chunk.page_content:
+
+            # Generic structured-data tagging: look for numeric patterns, tables,
+            # or delimiter characters common in structured content (currency, lists, etc.)
+            has_number = any(char.isdigit() for char in chunk.page_content)
+            has_delimiter = any(c in chunk.page_content for c in ('|', '—', '->', ':', '\t'))
+            if has_number and has_delimiter:
                 chunk.metadata['content_type'] = 'structured_data'
             else:
                 chunk.metadata['content_type'] = 'text'

@@ -32,6 +32,9 @@
 - 🤖 **Multiple LLM Options** - Cohere, OpenAI, Gemini, or local Llama
 - 💾 **Scalable Storage** - MongoDB + Vector DB (Qdrant, FAISS, Pinecone, Chroma)
 - 🌍 **Multilingual** - Arabic and English support out of the box
+- 🌐 **Web Search Integration** - Live data retrieval using Tavily
+- ⚙️ **Advanced Agentic Workflow** - Graph-based routing, retrieval, and evaluation nodes for lower latency
+- 📊 **Built-in RAG Evaluation** - Pipeline to score and evaluate responses
 
 ---
 
@@ -77,6 +80,8 @@ VECTOR_DB_BACKEND="QDRANT"         # or FAISS, PINECONE, CHROMA
 | **Ranking** | BM25, Cohere Reranker |
 | **Monitoring** | Prometheus, Grafana |
 | **Infrastructure** | Docker, Docker Compose, Nginx |
+| **Agents & Task Queues** | Graph-based workflow, Celery (Async Processing) |
+| **Web Search** | Tavily API |
 
 ---
 

@@ -43,6 +43,7 @@ class CacheService:
                     do_reset=False
                 )
             self._initialized_collections.add(col_name)
+            _COLLECTION_LOCKS.pop(col_name, None)
 
     def build_cache_key(self, project_id: str, query: str) -> int:
         gen_model = getattr(
@@ -86,30 +87,30 @@ class CacheService:
                 expires_at = metadata.get("expires_at")
                 if expires_at and time.time() > expires_at:
                     try:
-                        record_cache_miss(project_id=project_id)
+                        record_cache_miss()
                     except Exception:
                         pass
                     return None
                 cached_answer = metadata.get("answer")
                 if cached_answer:
                     try:
-                        record_cache_hit(project_id=project_id)
+                        record_cache_hit()
                     except Exception:
                         pass
                     return cached_answer
                 try:
-                    record_cache_miss(project_id=project_id)
+                    record_cache_miss()
                 except Exception:
                     pass
             else:
                 try:
-                    record_cache_miss(project_id=project_id)
+                    record_cache_miss()
                 except Exception:
                     pass
         except Exception as e:
             logger.error("Error accessing semantic cache: %s", e)
             try:
-                record_cache_miss(project_id=project_id)
+                record_cache_miss()
             except Exception:
                 pass
             

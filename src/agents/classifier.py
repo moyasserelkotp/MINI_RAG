@@ -15,9 +15,12 @@ class QueryClassifier:
         self.project_keywords = ["project", "metadata", "created", "name of this project"]
         self.asset_keywords = ["files", "documents uploaded", "assets", "what files"]
         self.complex_keywords = ["compare", "analyze across", "differences between", "similarities", "vs"]
+        import datetime
+        current_year = datetime.date.today().year
         self.web_search_keywords = [
             "latest", "recent", "news", "today", "current price", "stock price",
-            "weather", "live", "right now", "breaking", "2024", "2025", "2026",
+            "weather", "live", "right now", "breaking", 
+            str(current_year), str(current_year + 1), str(current_year + 2),
             "who won", "what happened", "trending", "google", "search the web",
             "search internet", "search online"
         ]

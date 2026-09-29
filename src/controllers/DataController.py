@@ -1,5 +1,6 @@
 from .BaseController import BaseController
 from .ProjectController import ProjectController
+# pyrefly: ignore [missing-import]
 from fastapi import UploadFile
 from models import ResponseSignal
 import re
@@ -70,25 +71,18 @@ class DataController(BaseController):
                 cleaned = cleaned[:100]
         return cleaned
 
-    def delete_file_by_name(self, file_id: str) -> bool:
-        """Remove the physical file from every known project folder.
-
-        Iterates through project directories under ``self.files_dir`` and
-        deletes the first matching file. Returns True if deleted, False if not found.
+    def delete_file_by_name(self, project_id: str, file_id: str) -> bool:
+        """Remove the physical file from the project folder.
         """
-        if not os.path.isdir(self.files_dir):
-            return False
-
-        for project_dir in os.listdir(self.files_dir):
-            candidate = os.path.join(self.files_dir, project_dir, file_id)
-            if os.path.isfile(candidate):
-                try:
-                    os.remove(candidate)
-                    return True
-                except OSError as e:
-                    import logging as _log
-                    _log.getLogger(__name__).error("Failed to delete file %s: %s", candidate, e)
-                    return False
+        candidate = os.path.join(self.files_dir, project_id, file_id)
+        if os.path.isfile(candidate):
+            try:
+                os.remove(candidate)
+                return True
+            except OSError as e:
+                import logging as _log
+                _log.getLogger(__name__).error("Failed to delete file %s: %s", candidate, e)
+                return False
         return False
 
 

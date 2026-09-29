@@ -1,12 +1,11 @@
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, UploadFile, File, status, Request, HTTPException, Path
-from fastapi.responses import JSONResponse
 from helpers.config import get_settings, Settings
-from controllers import DataController, ProjectController, ProcessController
+from controllers import DataController  
 import aiofiles
-import time
 
 from .schemes.data import (
-    ProcessRequest, URLIngestRequest, AssetUploadResponse, 
+    URLIngestRequest, AssetUploadResponse, 
     AssetListResponse, BatchUploadResponse, URLIngestResponse, 
     AssetItem, BatchUploadResult
 )
@@ -16,12 +15,11 @@ from models.AssetModel import AssetModel
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from models.db_schemes import DataChunk, Asset
-from utils.metrics import record_chunking_latency
-
 import os
 import re
 import hashlib
 from typing import List as ListType
+# pyrefly: ignore [import-unresolved, missing-import]
 from bson.objectid import ObjectId
 import logging
 from models.enums.AssetTypeEnum import AssetTypeEnum
@@ -178,7 +176,7 @@ async def delete_asset(request: Request, asset_id: str, project_id: str = _PROJE
 
     # 2. Delete the physical file
     data_controller = DataController()
-    file_deleted = data_controller.delete_file_by_name(file_id=asset.asset_name)
+    file_deleted = data_controller.delete_file_by_name(project_id=project_id, file_id=asset.asset_name)
     if not file_deleted:
         logger.warning("Physical file not found for asset %s — may have already been deleted", asset_id)
 
@@ -280,6 +278,7 @@ async def ingest_url(
     ingest_request: URLIngestRequest,
     project_id: str = _PROJECT_ID,
 ):
+    # pyrefly: ignore [missing-import]
     import httpx
     from bs4 import BeautifulSoup
     import urllib.parse
@@ -403,7 +402,9 @@ async def ingest_url(
         asset_id = new_asset_record.id
 
     # 4. Chunk text directly in a separate thread to unblock event loop
+    # pyrefly: ignore [missing-import]
     from langchain_core.documents import Document
+    # pyrefly: ignore [missing-import]
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     doc = Document(page_content=text, metadata={"source": ingest_request.url, "type": "url"})

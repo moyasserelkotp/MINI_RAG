@@ -3,7 +3,8 @@ from .BaseController import BaseController
 from models.db_schemes import Project, DataChunk
 from stores.llm.LLMEnums import DocumentTypeEnum
 from models.enums.DataBaseEnum import DataBaseEnum
-from typing import List, Optional
+from typing import List, Optional, Any, Union
+from dataclasses import dataclass
 import logging
 import json
 import uuid
@@ -29,6 +30,13 @@ from services.prompt_service import PromptService
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class RAGResult:
+    answer: Union[str, bool, None]
+    full_prompt: Optional[str]
+    chat_history: Optional[List[dict]]
+    sources: List[dict]
+    cached: bool
 
 
 _BACKGROUND_TASKS: set = set()
@@ -83,6 +91,14 @@ class NLPController(BaseController):
         self.prompt_service = PromptService(
             template_parser, generation_client
         )
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate tokens for a given text using a blended heuristic."""
+        if not text:
+            return 0
+        char_based = len(text) / 4.0
+        word_based = len(text.split()) / 0.75
+        return int((char_based + word_based) / 2)
 
     #  Helpers 
 
@@ -186,7 +202,7 @@ class NLPController(BaseController):
         )
 
         try:
-            record_document_processed(project_id=project.project_id, count=len(f_texts))
+            record_document_processed(count=len(f_texts))
         except Exception:
             logger.exception("Failed to record document processed metric")
 
@@ -242,15 +258,15 @@ class NLPController(BaseController):
                 )
             duration = time.monotonic() - start
             try:
-                record_retrieval_latency(project_id=project.project_id, duration=duration)
+                record_retrieval_latency(duration=duration)
                 if results:
-                    record_chunks_retrieved(project_id=project.project_id, count=len(results))
+                    record_chunks_retrieved(count=len(results))
             except Exception:
                 logger.exception("Failed to record retrieval metrics")
         except Exception as e:
             logger.error("Vector search failed: %s", e)
             try:
-                record_retrieval_error(project_id=project.project_id)
+                record_retrieval_error()
             except Exception:
                 logger.exception("Failed to record retrieval error metric")
             return None
@@ -263,23 +279,18 @@ class NLPController(BaseController):
 
     #  Answer 
 
-    async def answer_rag_question(
+    async def _prepare_rag_context(
         self,
         project: Project,
         query: str,
-        limit: int = 10,
-        use_hybrid: bool = True,
-        score_threshold: Optional[float] = None,
-        use_rerank: bool = True,
-        session_id: Optional[str] = None,
-        metadata_filter: Optional[dict] = None,
-        use_cache: Optional[bool] = None,
+        limit: int,
+        use_hybrid: bool,
+        score_threshold: Optional[float],
+        use_rerank: bool,
+        session_id: Optional[str],
+        metadata_filter: Optional[dict],
+        use_cache: Optional[bool]
     ):
-        """Run full RAG pipeline and return (answer, full_prompt, chat_history, sources, cached)."""
-        answer, full_prompt, chat_history_prompts = None, None, None
-        sources: List[dict] = []
-        cached = False
-
         use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
         window_k = getattr(self.app_settings, "WINDOW_MEMORY_K", 5)
         use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
@@ -304,19 +315,17 @@ class NLPController(BaseController):
         # 2. Embed Search Query
         cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
         if not cache_vec:
-            return False, None, None, [], False
+            return True, {"error": "embedding failed"}
 
         # 3. Semantic Cache Check
         cached_answer = await self.cache_service.check_semantic_cache(project.project_id, cache_vec, use_cache, cache_threshold)
         if cached_answer:
-            # Save the exchange to session memory even on a cache hit so that
-            # follow-up questions (e.g. "what is my name?") can still use context.
             if session_id and session_model and message_model:
                 from models.db_schemes.chat_message import ChatMessage
                 await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
                 await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=cached_answer))
                 await session_model.increment_message_count(session_id, 2)
-            return cached_answer, "[CACHED RESPONSES BYPASS PROMPT]", [], [], True
+            return True, {"cached_answer": cached_answer}
 
         # 4. Entity Memory Retrieval
         entities_text = ""
@@ -338,15 +347,53 @@ class NLPController(BaseController):
             self.search_vector_db_collection, project, search_query, limit, use_hybrid, score_threshold, metadata_filter, use_vector, use_rerank
         )
 
-        # RAG-05: Return a structured no-context signal so the caller can render
-        # a proper "no relevant documents" message instead of an LLM hallucination.
         if not retrieved_documents and use_vector:
-            return "NO_CONTEXT", None, [], [], False
+            return True, {"no_context": True}
 
         # 6. Prompt Construction
         full_prompt, chat_history_prompts = self.prompt_service.format_system_prompt(
             query, session_obj, session_messages, entities_text, retrieved_documents, use_summary, use_entity, use_window
         )
+
+        return False, {
+            "full_prompt": full_prompt,
+            "chat_history_prompts": chat_history_prompts,
+            "sources": sources,
+            "cache_vec": cache_vec,
+            "search_query": search_query,
+            "session_obj": session_obj,
+            "session_model": session_model,
+            "message_model": message_model,
+            "use_cache": use_cache,
+            "use_entity": use_entity,
+            "use_summary": use_summary
+        }
+    async def answer_rag_question(
+        self,
+        project: Project,
+        query: str,
+        limit: int = 10,
+        use_hybrid: bool = True,
+        score_threshold: Optional[float] = None,
+        use_rerank: bool = True,
+        session_id: Optional[str] = None,
+        metadata_filter: Optional[dict] = None,
+        use_cache: Optional[bool] = None,
+    ):
+        """Run full RAG pipeline and return (answer, full_prompt, chat_history, sources, cached)."""
+        is_early, data = await self._prepare_rag_context(
+            project, query, limit, use_hybrid, score_threshold, use_rerank, session_id, metadata_filter, use_cache
+        )
+        if is_early:
+            if "error" in data:
+                return RAGResult(answer=False, full_prompt=None, chat_history=None, sources=[], cached=False)
+            if "cached_answer" in data:
+                return RAGResult(answer=data["cached_answer"], full_prompt="[CACHED RESPONSES BYPASS PROMPT]", chat_history=[], sources=[], cached=True)
+            if "no_context" in data:
+                return RAGResult(answer="NO_CONTEXT", full_prompt=None, chat_history=[], sources=[], cached=False)
+                
+        full_prompt = data["full_prompt"]
+        chat_history_prompts = data["chat_history_prompts"]
 
         # 7. Generate Answer — guarded by the shared semaphore to cap simultaneous
         #    Cohere API calls and avoid hitting the provider's rate limit.
@@ -358,7 +405,7 @@ class NLPController(BaseController):
             backend = getattr(self.generation_client, 'generation_model_id', 'unknown')
             record_generation_latency(backend=backend, duration=gen_duration)
             if answer:
-                record_generation_tokens(backend=backend, tokens=int(len(answer) / 4))
+                record_generation_tokens(backend=backend, tokens=self._estimate_tokens(answer))
         except Exception:
             pass
 
@@ -369,17 +416,23 @@ class NLPController(BaseController):
                 project=project,
                 query=query,
                 answer=answer,
-                cache_vec=cache_vec,
-                session_obj=session_obj,
-                session_model=session_model,
-                message_model=message_model,
-                use_cache=use_cache,
-                use_entity=use_entity,
-                use_summary=use_summary,
-                search_query=search_query,
+                cache_vec=data["cache_vec"],
+                session_obj=data["session_obj"],
+                session_model=data["session_model"],
+                message_model=data["message_model"],
+                use_cache=data["use_cache"],
+                use_entity=data["use_entity"],
+                use_summary=data["use_summary"],
+                search_query=data["search_query"],
             )
 
-        return answer, full_prompt, chat_history_prompts, sources, False
+        return RAGResult(
+            answer=answer,
+            full_prompt=full_prompt,
+            chat_history=chat_history_prompts,
+            sources=data.get("sources", []),
+            cached=False
+        )
 
     # ─── Shared post-generation memory saves ───────────────────────────────
 
@@ -460,63 +513,22 @@ class NLPController(BaseController):
     ):
         """Run the RAG pipeline and yield LLM tokens one-by-one (async generator)."""
         import asyncio
-
-        use_window = getattr(self.app_settings, "USE_WINDOW_MEMORY", True)
-        window_k = getattr(self.app_settings, "WINDOW_MEMORY_K", 5)
-        use_summary = getattr(self.app_settings, "USE_SUMMARY_MEMORY", True)
-        use_entity = getattr(self.app_settings, "USE_ENTITY_MEMORY", True)
-        use_vector = getattr(self.app_settings, "USE_VECTOR_MEMORY", True)
-        use_cache = getattr(self.app_settings, "USE_SEMANTIC_CACHE", True)
-        cache_threshold = getattr(self.app_settings, "SEMANTIC_CACHE_THRESHOLD", 0.95)
-
-        session_obj, session_messages, session_model, message_model = await self.memory_service.prepare_session(
-            session_id, project.project_id, use_window, use_summary, window_k
+        is_early, data = await self._prepare_rag_context(
+            project, query, limit, use_hybrid, score_threshold, True, session_id, metadata_filter, None
         )
+        if is_early:
+            if "error" in data:
+                yield data
+                return
+            if "cached_answer" in data:
+                yield data["cached_answer"]
+                return
+            if "no_context" in data:
+                yield "No relevant documents found for your query."
+                return
 
-        search_query = query
-        if session_messages:
-            search_query = await self.memory_service.condense_query(query, session_messages)
-
-        cache_vec = await asyncio.to_thread(self.embedding_client.embed_text, text=search_query, document_type=DocumentTypeEnum.QUERY.value)
-        if not cache_vec:
-            yield {"error": "embedding failed"}
-            return
-
-        cached_answer = await self.cache_service.check_semantic_cache(project.project_id, cache_vec, use_cache, cache_threshold)
-        if cached_answer:
-            # Save exchange to session memory even on cache hit
-            if session_id and session_model and message_model:
-                from models.db_schemes.chat_message import ChatMessage
-                await message_model.create_message(ChatMessage(session_id=session_id, role="user", text=query))
-                await message_model.create_message(ChatMessage(session_id=session_id, role="assistant", text=cached_answer))
-                await session_model.increment_message_count(session_id, 2)
-            yield cached_answer
-            return
-
-        entities_text = ""
-        if session_id and use_entity:
-            try:
-                ent_col = self.memory_service.get_entity_collection_name(project.project_id)
-                await self.memory_service.init_entity_collection(project.project_id)
-                ent_docs = await asyncio.to_thread(
-                    self.vectordb_client.search_by_vector, collection_name=ent_col, vector=cache_vec, limit=3, score_threshold=0.6
-                )
-                if ent_docs:
-                    entities_text = "\n".join([d.payload.get("text", "") for d in ent_docs])
-            except Exception:
-                pass
-
-        retrieved_documents, _ = await self.retrieval_service.retrieve_and_rerank_context(
-            self.search_vector_db_collection, project, search_query, limit, use_hybrid, score_threshold, metadata_filter, use_vector, use_rerank=True
-        )
-        
-        if not retrieved_documents and use_vector:
-            yield "No relevant documents found for your query."
-            return
-
-        full_prompt, chat_history_prompts = self.prompt_service.format_system_prompt(
-            query, session_obj, session_messages, entities_text, retrieved_documents, use_summary, use_entity, use_window
-        )
+        full_prompt = data["full_prompt"]
+        chat_history_prompts = data["chat_history_prompts"]
 
         system_prompt = self.template_parser.get("rag", "system_prompt")
         if chat_history_prompts and chat_history_prompts[0].get("role") == self.generation_client.enums.SYSTEM.value:
@@ -553,7 +565,7 @@ class NLPController(BaseController):
                 gen_duration = time.monotonic() - gen_start
                 backend = getattr(self.generation_client, 'generation_model_id', 'unknown')
                 record_generation_latency(backend=backend, duration=gen_duration)
-                record_generation_tokens(backend=backend, tokens=int(len(full_text) / 4))
+                record_generation_tokens(backend=backend, tokens=self._estimate_tokens(full_text))
             except Exception:
                 pass
             
@@ -562,12 +574,12 @@ class NLPController(BaseController):
                 project=project,
                 query=query,
                 answer=full_text,
-                cache_vec=cache_vec,
-                session_obj=session_obj,
-                session_model=session_model,
-                message_model=message_model,
-                use_cache=use_cache,
-                use_entity=use_entity,
-                use_summary=use_summary,
-                search_query=search_query,
+                cache_vec=data["cache_vec"],
+                session_obj=data["session_obj"],
+                session_model=data["session_model"],
+                message_model=data["message_model"],
+                use_cache=data["use_cache"],
+                use_entity=data["use_entity"],
+                use_summary=data["use_summary"],
+                search_query=data["search_query"],
             )

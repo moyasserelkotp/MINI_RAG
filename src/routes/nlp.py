@@ -1,5 +1,7 @@
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, status, Request, HTTPException, Path
-from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
+# pyrefly: ignore [missing-import]
+from fastapi.responses import StreamingResponse
 from .schemes.nlp import (
     SearchRequest, InfoIndexResponse,
     SearchResponse, AnswerResponse, SearchResultItem
@@ -8,9 +10,11 @@ from .schemes.system import BaseResponse
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from controllers.NLPController import NLPController
+from models.AssetModel import AssetModel
 from models import ResponseSignal
 import logging
 import json
+import asyncio
 
 logger = logging.getLogger("uvicorn.error")
 from middleware.rate_limiter import limiter
@@ -47,7 +51,6 @@ async def get_project_index_info(request: Request, project_id: str = _PROJECT_ID
         _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
-    import asyncio
     collection_info = await asyncio.to_thread(
         nlp_controller.get_vector_db_collection_info, project=project
     )
@@ -70,7 +73,6 @@ async def delete_project_index(request: Request, project_id: str = _PROJECT_ID):
         _project_not_found(project_id)
 
     nlp_controller = _make_nlp_controller(request)
-    import asyncio
     deleted = await asyncio.to_thread(
         nlp_controller.reset_vector_db_collection, project=project
     )
@@ -78,14 +80,12 @@ async def delete_project_index(request: Request, project_id: str = _PROJECT_ID):
     if deleted is not False:
         # Also clean up associated chunks and assets in MongoDB so they don't dangle
         try:
-            from models.ChunkModel import ChunkModel
             chunk_model = await ChunkModel.create_instance(db_client=request.app.db_client)
             await chunk_model.delete_chunks_by_project_id(project_id=project.id)
         except Exception as e:
             logger.error("Failed to delete chunks during document reset for %s: %s", project_id, e)
 
         try:
-            from models.AssetModel import AssetModel
             asset_model = await AssetModel.create_instance(db_client=request.app.db_client)
             await asset_model.delete_all_project_assets(asset_project_id=project.id)
         except Exception as e:
@@ -144,7 +144,6 @@ async def retrieve_documents(request: Request, search_request: SearchRequest, pr
     if search_request.filter_metadata:
         metadata_filter.update(search_request.filter_metadata)
 
-    import asyncio
     results = await asyncio.to_thread(
         nlp_controller.search_vector_db_collection,
         project=project,
@@ -208,7 +207,7 @@ async def answer_rag(request: Request, search_request: SearchRequest, project_id
         metadata_filter.update(search_request.filter_metadata)
 
     try:
-        answer, full_prompt, chat_history, sources, cached = await nlp_controller.answer_rag_question(
+        rag_result = await nlp_controller.answer_rag_question(
             project=project,
             query=search_request.text,
             limit=search_request.limit,
@@ -224,13 +223,13 @@ async def answer_rag(request: Request, search_request: SearchRequest, project_id
             detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": str(ve)},
         )
 
-    if answer is False:
+    if rag_result.answer is False:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "Search infrastructure failed"},
         )
 
-    if answer is None and full_prompt is None and chat_history is None:
+    if rag_result.answer is None and rag_result.full_prompt is None and rag_result.chat_history is None:
         return AnswerResponse(
             signal=ResponseSignal.RAG_ANSWER_SUCCESS.value,
             answer="No relevant documents found for your query. Please try a different question or lower the score threshold.",
@@ -239,25 +238,25 @@ async def answer_rag(request: Request, search_request: SearchRequest, project_id
             session_id=search_request.session_id,
         )
 
-    if answer is None and full_prompt is not None:
+    if rag_result.answer is None and rag_result.full_prompt is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": "LLM generation failed."},
         )
 
-    if isinstance(answer, str) and (
-        "error:" in answer.lower() or "not initialized" in answer or "was not set" in answer
+    if isinstance(rag_result.answer, str) and (
+        "error:" in rag_result.answer.lower() or "not initialized" in rag_result.answer or "was not set" in rag_result.answer
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": answer},
+            detail={"signal": ResponseSignal.RAG_ANSWER_ERROR.value, "error": rag_result.answer},
         )
 
     return AnswerResponse(
         signal=ResponseSignal.RAG_ANSWER_SUCCESS.value,
-        answer=answer,
-        sources=sources,
-        cached=cached,
+        answer=rag_result.answer,
+        sources=rag_result.sources,
+        cached=rag_result.cached,
         session_id=search_request.session_id,
     )
 
@@ -305,7 +304,7 @@ async def answer_rag_stream(
             if not hasattr(gen_client, "stream_text"):
                 # Fallback: run full answer and emit in one shot
                 try:
-                    answer, _, _, sources, cached = await nlp_controller.answer_rag_question(
+                    rag_result = await nlp_controller.answer_rag_question(
                         project=project,
                         query=search_request.text,
                         limit=search_request.limit,
@@ -318,9 +317,9 @@ async def answer_rag_stream(
                     yield f"data: {json.dumps({'error': str(ve)})}\n\n"
                     _done_emitted = True
                     return
-                if answer:
-                    yield f"data: {json.dumps({'token': answer})}\n\n"
-                yield f"data: {json.dumps({'done': True, 'sources': sources, 'cached': cached})}\n\n"
+                if rag_result.answer:
+                    yield f"data: {json.dumps({'token': rag_result.answer})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'sources': rag_result.sources, 'cached': rag_result.cached})}\n\n"
                 _done_emitted = True
                 return
 

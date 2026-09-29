@@ -1,7 +1,6 @@
 from .BaseDataModel import BaseDataModel
 from .db_schemes import ChatSession
 from .enums.DataBaseEnum import DataBaseEnum
-from bson.objectid import ObjectId
 from datetime import datetime, timezone
 
 

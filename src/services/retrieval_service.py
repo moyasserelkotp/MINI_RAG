@@ -1,12 +1,6 @@
 import asyncio
 import logging
-import time
 from typing import Optional, List, Dict, Any, Tuple
-from utils.metrics import (
-    record_retrieval_latency,
-    record_chunks_retrieved,
-    record_retrieval_error
-)
 
 logger = logging.getLogger(__name__)
 

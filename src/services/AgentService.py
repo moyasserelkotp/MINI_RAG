@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 import uuid
 import asyncio
 from datetime import datetime, timezone
@@ -36,7 +36,8 @@ class AgentService:
         asset_model,
         agent_run_model,
         nlp_controller=None,
-        llm_semaphore: asyncio.Semaphore = None,  # FIX-2: semaphore for concurrent LLM calls
+        llm_semaphore: asyncio.Semaphore = None,
+        cache_service=None,  # I-3: accept CacheService directly to avoid tight coupling
     ):
         self.app_settings = get_settings()
         self.llm_client = llm_client
@@ -46,9 +47,18 @@ class AgentService:
         self.asset_model = asset_model
         self.agent_run_model = agent_run_model
         self.nlp_controller = nlp_controller
-        self.cache_service = self.nlp_controller.cache_service  # FIX-7
 
-        # FIX-2: Use the shared semaphore, or fall back to a generous local one
+        # I-3: prefer the directly-injected instance; fall back to NLPController's
+        # instance for backward compat; final fallback is None (cache disabled).
+        if cache_service is not None:
+            self.cache_service = cache_service
+        elif nlp_controller is not None and hasattr(nlp_controller, 'cache_service'):
+            self.cache_service = nlp_controller.cache_service
+        else:
+            self.cache_service = None
+            logger.warning("AgentService: no CacheService available — semantic cache disabled")
+
+        # Use the shared semaphore, or fall back to a generous local one
         # so the service is self-contained even if no semaphore is injected.
         self.llm_semaphore: asyncio.Semaphore = llm_semaphore or asyncio.Semaphore(10)
 
@@ -92,8 +102,8 @@ class AgentService:
             if agent_mode == "OFF":
                 return {"error": "Agentic RAG is disabled."}
 
-            # FIX-7: Add semantic cache check to the agent path
-            use_cache = getattr(self.app_settings, "ENABLE_SEMANTIC_CACHE", True)
+            # Semantic cache check (only when cache_service is available)
+            use_cache = getattr(self.app_settings, "ENABLE_SEMANTIC_CACHE", True) and self.cache_service is not None
             query_emb = None
             if use_cache and not chat_history:
                 try:
@@ -124,7 +134,7 @@ class AgentService:
 
             # 1. Setup Tools for this specific project/session
             tool_registry = ToolRegistry()
-            tool_registry.register(SearchDocumentsTool(self.retrieval_service, self.nlp_controller, project))
+            tool_registry.register(SearchDocumentsTool(self.retrieval_service, self.nlp_controller, project, self.llm_semaphore))
             tool_registry.register(GetProjectInfoTool(self.project_model, project.project_id))
             tool_registry.register(ListProjectAssetsTool(self.asset_model, project.project_id))
             tool_registry.register(GetConversationContextTool(self.memory_service, project.project_id, session_id))

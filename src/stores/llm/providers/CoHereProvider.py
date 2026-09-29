@@ -88,10 +88,11 @@ class CoHereProvider(LLMInterface):
     def generate_text(
         self,
         prompt: str,
-        chat_history: list = [],
+        chat_history: list = None,
         max_output_tokens: int = None,
         temperature: float = None,
     ):
+        chat_history = chat_history or []
         if not self.client:
             logger.error("CoHere client was not set")
             return None

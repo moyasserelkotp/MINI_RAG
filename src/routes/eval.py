@@ -3,7 +3,9 @@
 Simple pass-through to existing RAG evaluator utility functions,
 exposed via REST API.
 """
-from fastapi import APIRouter, Request, status, Depends, HTTPException
+# pyrefly: ignore [missing-import]
+from fastapi import APIRouter, Request, status, HTTPException
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
 from .schemes.nlp import EvaluationResponse
 

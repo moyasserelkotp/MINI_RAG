@@ -52,6 +52,7 @@ class MemoryService:
                     do_reset=False
                 )
             self._initialized_collections.add(col_name)
+            _COLLECTION_LOCKS.pop(col_name, None)
 
     async def prepare_session(self, session_id: Optional[str], project_id: str, use_window: bool, use_summary: bool, window_k: int):
         session_obj, session_messages, session_model, message_model = None, [], None, None
