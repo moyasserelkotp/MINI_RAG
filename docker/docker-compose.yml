@@ -14,6 +14,7 @@ services:
       - 1.1.1.1
     volumes:
       - fastapi_data:/app/assets
+      - ../src:/app        # dev: reflect source changes without rebuilding
     networks:
       - backend
     restart: always

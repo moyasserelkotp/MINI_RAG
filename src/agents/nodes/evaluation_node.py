@@ -47,6 +47,7 @@ def get_evaluation_node(evaluator: RetrievalEvaluator, rewriter: QueryRewriter):
         return {
             "evaluation_result": eval_result,
             "current_query": new_query,
+            "rewrite_count": state.get("rewrite_count", 0) + 1,
             "step_count": state.get("step_count", 0) + 1,
             "trace": [trace_event]
         }

@@ -50,7 +50,8 @@ Available Tools:
             prompt += f"- {t['name']}: {t['description']}\n  Parameters: {t['parameters']}\n\n"
             
         try:
-            # FIX-2: acquire semaphore slot before LLM call
+            # THREAD-SAFE: generate_structured_output must use a thread-safe HTTP
+            # client. See LLMProviderFactory — each provider owns its client.
             async with self._semaphore:
                 result = await asyncio.to_thread(
                     self.llm_client.generate_structured_output,
@@ -58,12 +59,12 @@ Available Tools:
                     schema=schema,
                     chat_history=chat_history
                 )
-            
+
             if result and "steps" in result:
                 return result["steps"]
-                
+
         except Exception as e:
-            logger.error(f"AgentPlanner error: {e}")
+            logger.error("AgentPlanner error [%s]: %s", type(e).__name__, e, exc_info=True)
             
         # Fallback plan
         return [

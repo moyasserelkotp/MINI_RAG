@@ -1,6 +1,10 @@
+# pyrefly: ignore [missing-import]
 import pytest
 from unittest.mock import MagicMock
+# pyrefly: ignore [missing-import]
 from services.cache_service import CacheService
+# pyrefly: ignore [missing-import]
+from utils.collection_tracker import CollectionInitTracker
 
 @pytest.fixture
 def cache_service():
@@ -20,7 +24,7 @@ def cache_service():
         embedding_client=embedding_client,
         generation_client=generation_client,
         app_settings=app_settings,
-        initialized_collections=set()
+        initialized_collections=CollectionInitTracker()
     )
 
 def test_cache_key_deterministic(cache_service):

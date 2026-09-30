@@ -1,5 +1,6 @@
 from ..state import AgentState
 from tools.registry import ToolRegistry
+import json
 
 def get_retrieval_node(tool_registry: ToolRegistry):
     async def retrieval_node(state: AgentState):
@@ -25,7 +26,7 @@ def get_retrieval_node(tool_registry: ToolRegistry):
             # If search or web search, update retrieved context
             if tool_name in ["SEARCH_DOCUMENTS", "WEB_SEARCH"] and result.get("success"):
                 new_context = result.get("results", [])
-                
+
                 # If WEB_SEARCH, format the dict into readable text
                 if tool_name == "WEB_SEARCH":
                     formatted_context = []
@@ -39,9 +40,14 @@ def get_retrieval_node(tool_registry: ToolRegistry):
 
                 trace_event["status"] = "success"
                 trace_event["chunks_retrieved"] = len(new_context)
-                
+
+                # Deduplicate against existing context
+                existing_context = state.get("retrieved_context", [])
+                existing_texts = {item.get("text") for item in existing_context if isinstance(item, dict)}
+                deduped_new = [item for item in new_context if isinstance(item, dict) and item.get("text") not in existing_texts]
+
                 return {
-                    "retrieved_context": state.get("retrieved_context", []) + new_context,
+                    "retrieved_context": existing_context + deduped_new,
                     "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
                     "step_count": state.get("step_count", 0) + 1,
                     "trace": [trace_event]
@@ -50,13 +56,20 @@ def get_retrieval_node(tool_registry: ToolRegistry):
                 # Other tools (Project, Asset, Memory)
                 # Treat their results as context for the LLM
                 context_item = {
-                    "text": str(result),
+                    "text": json.dumps(result, default=str),
                     "score": 1.0,
                     "metadata": {"source": tool_name}
                 }
                 trace_event["status"] = "success"
+                
+                existing_context = state.get("retrieved_context", [])
+                existing_texts = {item.get("text") for item in existing_context if isinstance(item, dict)}
+                final_context = existing_context
+                if context_item["text"] not in existing_texts:
+                    final_context = existing_context + [context_item]
+
                 return {
-                    "retrieved_context": state.get("retrieved_context", []) + [context_item],
+                    "retrieved_context": final_context,
                     "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,  # Also increment attempts here to prevent infinite loops
                     "step_count": state.get("step_count", 0) + 1,
                     "trace": [trace_event]

@@ -1,3 +1,4 @@
+from stores.llm.templates import template_parser
 import hashlib
 from .BaseController import BaseController
 from models.db_schemes import Project, DataChunk
@@ -17,9 +18,6 @@ from utils.metrics import (
     record_generation_latency,
     record_document_processed,
     record_retrieval_error,
-    record_generation_error,
-    record_cache_hit,
-    record_cache_miss,
     record_generation_tokens,
 )
 
@@ -58,8 +56,9 @@ class NLPController(BaseController):
 
     def __init__(
         self, db_client, vectordb_client, generation_client, embedding_client,
-        template_parser, cohere_client=None,
-        initialized_collections: set = None,
+        template_parser,
+        cohere_client=None,
+        initialized_collections=None,
         llm_semaphore: asyncio.Semaphore = None,
     ):
         super().__init__()
@@ -71,9 +70,11 @@ class NLPController(BaseController):
         self.cohere_client = cohere_client
 
         # Use the shared process-level set when provided (passed from app state).
-        # Fall back to a fresh set only when called outside of a request context
-        # (e.g. tests, CLI scripts) so the class stays independently usable.
-        self._initialized_collections: set = initialized_collections if initialized_collections is not None else set()
+        if initialized_collections is not None:
+            self._initialized_collections = initialized_collections
+        else:
+            from utils.collection_tracker import CollectionInitTracker
+            self._initialized_collections = CollectionInitTracker()
 
         # Semaphore that caps simultaneous LLM API calls across all concurrent
         # requests in this worker. Falls back to a permissive local semaphore.

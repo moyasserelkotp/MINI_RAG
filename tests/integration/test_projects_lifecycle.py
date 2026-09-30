@@ -1,6 +1,6 @@
 # pyrefly: ignore [missing-import]
 from unittest.mock import MagicMock
-from unittest.mock import AsyncMock, MagicMock4
+from unittest.mock import AsyncMock, MagicMock
 # pyrefly: ignore [missing-import]
 import pytest
 # pyrefly: ignore [missing-import]

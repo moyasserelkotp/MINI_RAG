@@ -22,7 +22,10 @@ def client():
     app.generation_client = MagicMock()
     app.embedding_client = MagicMock()
     app.template_parser = MagicMock()
-    app.initialized_collections = set()
+
+    # pyrefly: ignore [missing-import]
+    from utils.collection_tracker import CollectionInitTracker
+    app.initialized_collections = CollectionInitTracker()
     import asyncio
     app.llm_semaphore = asyncio.Semaphore(10)
     return TestClient(app)

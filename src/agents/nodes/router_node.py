@@ -1,6 +1,7 @@
 from ..state import AgentState
 from ..classifier import QueryClassifier
 from ..router import AgentRouter
+import uuid
 
 def get_router_node(classifier: QueryClassifier, router: AgentRouter):
     async def router_node(state: AgentState):
@@ -38,7 +39,7 @@ def get_router_node(classifier: QueryClassifier, router: AgentRouter):
             
         # Format tool call
         tool_call = {
-            "id": f"call_{state.get('step_count', 0)}",
+            "id": f"call_{uuid.uuid4().hex[:8]}",
             "name": action,
             "kwargs": tool_kwargs
         }

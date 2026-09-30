@@ -1,3 +1,12 @@
+"""
+MINI-RAG — Application entry point.
+
+Responsibilities:
+  - Configure logging
+  - Define the FastAPI lifespan (startup / shutdown)
+  - Register middleware (auth, CORS, rate-limit, request-ID, Prometheus)
+  - Mount all routers
+"""
 import asyncio
 # pyrefly: ignore [missing-import]
 import logging
@@ -94,7 +103,13 @@ async def lifespan(app: FastAPI):
             logger.warning("Could not initialise Cohere client: %s", exc)
 
     # Shared per-worker state
-    app.initialized_collections = set()
+    # CRITICAL-1 FIX: use a lock-protected tracker instead of a bare set.
+    # Within a single Uvicorn worker all coroutines share this instance;
+    # the internal asyncio.Lock prevents concurrent coroutines from racing.
+    # Each worker starts fresh (expected) — idempotent create_collection() in
+    # each service makes this safe across workers too.
+    from utils.collection_tracker import CollectionInitTracker
+    app.initialized_collections = CollectionInitTracker()
     app.llm_semaphore = asyncio.Semaphore(10)
 
     from controllers import AgentController, NLPController
@@ -220,12 +235,4 @@ except Exception as exc:
     logger.exception("⚠️ Failed to register /metrics endpoint: %s", exc)
 
 
-"""
-MINI-RAG — Application entry point.
 
-Responsibilities:
-  - Configure logging
-  - Define the FastAPI lifespan (startup / shutdown)
-  - Register middleware (auth, CORS, rate-limit, request-ID, Prometheus)
-  - Mount all routers
-"""

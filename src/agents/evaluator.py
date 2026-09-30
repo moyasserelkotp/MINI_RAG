@@ -1,17 +1,19 @@
 import logging
 import asyncio
-from helpers.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 class RetrievalEvaluator:
     """Evaluates the quality of retrieved context."""
 
-    def __init__(self, llm_client, score_threshold=0.35, llm_semaphore: asyncio.Semaphore = None):
+    def __init__(self, llm_client, score_threshold=0.35, llm_semaphore: asyncio.Semaphore = None,
+                 enable_llm_eval: bool = False):
         self.llm_client = llm_client
         self.score_threshold = score_threshold
-        self._settings = get_settings()
-        self._semaphore = llm_semaphore or asyncio.Semaphore(10)  # FIX-2
+        # MEDIUM-7 FIX: accept flag via DI instead of calling get_settings() in
+        # __init__ — this makes the class unit-testable without a real .env file.
+        self._enable_llm_eval = enable_llm_eval
+        self._semaphore = llm_semaphore or asyncio.Semaphore(10)
 
     async def evaluate(self, query: str, retrieved_context: list, query_category: str = None) -> dict:
         """
@@ -42,7 +44,7 @@ class RetrievalEvaluator:
                 "action": "REWRITE_QUERY"
             }
 
-        enable_llm_eval = getattr(self._settings, "ENABLE_RETRIEVAL_EVALUATION", False)
+        enable_llm_eval = self._enable_llm_eval
         is_complex = query_category == "COMPLEX_MULTI_STEP"
         if not enable_llm_eval or not is_complex or not self.llm_client:
             # Score passed deterministic check — treat as sufficient
@@ -78,7 +80,8 @@ Retrieved Context:
 {context_str}
 """
         try:
-            # FIX-2: acquire semaphore slot before LLM call
+            # THREAD-SAFE: generate_structured_output must use a thread-safe HTTP
+            # client. See LLMProviderFactory — each provider owns its client.
             async with self._semaphore:
                 result = await asyncio.to_thread(
                     self.llm_client.generate_structured_output,
@@ -96,7 +99,7 @@ Retrieved Context:
                 }
 
         except Exception as e:
-            logger.error(f"RetrievalEvaluator LLM error: {e}")
+            logger.error("RetrievalEvaluator LLM error [%s]: %s", type(e).__name__, e, exc_info=True)
 
         # Fallback: deterministic score already passed, treat as sufficient
         return {

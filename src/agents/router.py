@@ -68,18 +68,22 @@ Available Tools:
         
         try:
             async with self._semaphore:
+                # THREAD-SAFE: generate_structured_output must be stateless /
+                # use a thread-safe HTTP client (e.g. httpx with connection pool).
+                # Verified per LLMProviderFactory — each provider creates its own
+                # client instance; no shared mutable state across threads.
                 result = await asyncio.to_thread(
                     self.llm_client.generate_structured_output,
                     prompt=prompt,
                     schema=schema,
                     chat_history=chat_history
                 )
-            
+
             if result and "action" in result:
                 return result
                 
         except Exception as e:
-            logger.error(f"AgentRouter error: {e}")
+            logger.error("AgentRouter error [%s]: %s", type(e).__name__, e, exc_info=True)
             
         # Safe fallback
         return {

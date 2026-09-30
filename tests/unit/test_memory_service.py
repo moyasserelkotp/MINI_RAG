@@ -1,6 +1,10 @@
+# pyrefly: ignore [missing-import]
 import pytest
 from unittest.mock import MagicMock, AsyncMock
+# pyrefly: ignore [missing-import]
 from services.memory_service import MemoryService
+# pyrefly: ignore [missing-import]
+from utils.collection_tracker import CollectionInitTracker
 
 @pytest.fixture
 def memory_service():
@@ -21,7 +25,7 @@ def memory_service():
         embedding_client=embedding_client,
         template_parser=template_parser,
         app_settings=Settings(),
-        initialized_collections=set()
+        initialized_collections=CollectionInitTracker()
     )
 
 def test_entity_collection_name(memory_service):

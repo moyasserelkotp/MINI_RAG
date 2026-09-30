@@ -8,7 +8,7 @@ from utils.metrics import record_generation_latency, record_generation_error
 
 logger = logging.getLogger(__name__)
 
-_COLLECTION_LOCKS: dict[str, asyncio.Lock] = {}
+from utils.collection_tracker import CollectionInitTracker
 
 def _safe_task_callback(label: str):
     def _cb(t: asyncio.Task):
@@ -21,7 +21,7 @@ def _safe_task_callback(label: str):
     return _cb
 
 class MemoryService:
-    def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser, app_settings, initialized_collections: set):
+    def __init__(self, db_client, vectordb_client, generation_client, embedding_client, template_parser, app_settings, initialized_collections: CollectionInitTracker):
         self.db_client = db_client
         self.vectordb_client = vectordb_client
         self.generation_client = generation_client
@@ -38,8 +38,8 @@ class MemoryService:
         col_name = self.get_entity_collection_name(project_id)
         if col_name in self._initialized_collections:
             return
-        
-        lock = _COLLECTION_LOCKS.setdefault(col_name, asyncio.Lock())
+
+        lock = await self._initialized_collections.get_lock(col_name)
         async with lock:
             if col_name in self._initialized_collections:
                 return
@@ -52,7 +52,6 @@ class MemoryService:
                     do_reset=False
                 )
             self._initialized_collections.add(col_name)
-            _COLLECTION_LOCKS.pop(col_name, None)
 
     async def prepare_session(self, session_id: Optional[str], project_id: str, use_window: bool, use_summary: bool, window_k: int):
         session_obj, session_messages, session_model, message_model = None, [], None, None

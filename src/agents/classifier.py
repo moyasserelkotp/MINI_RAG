@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import datetime
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,6 @@ class QueryClassifier:
         self.project_keywords = ["project", "metadata", "created", "name of this project"]
         self.asset_keywords = ["files", "documents uploaded", "assets", "what files"]
         self.complex_keywords = ["compare", "analyze across", "differences between", "similarities", "vs"]
-        import datetime
         current_year = datetime.date.today().year
         self.web_search_keywords = [
             "latest", "recent", "news", "today", "current price", "stock price",
@@ -84,7 +84,8 @@ Categories:
 - WEB_SEARCH: Asking for live internet data — current events, latest news, real-time prices, weather, or anything likely NOT in uploaded documents.
 """
             try:
-                # FIX-2: acquire semaphore slot before LLM call
+                # THREAD-SAFE: generate_structured_output must use a thread-safe HTTP
+                # client. See LLMProviderFactory — each provider owns its client.
                 async with self._semaphore:
                     result = await asyncio.to_thread(
                         self.llm_client.generate_structured_output,
@@ -94,7 +95,7 @@ Categories:
                 if result and "category" in result:
                     return result["category"]
             except Exception as e:
-                logger.error(f"QueryClassifier LLM error: {e}")
+                logger.error("QueryClassifier LLM error [%s]: %s", type(e).__name__, e, exc_info=True)
                 
         # Default fallback
         return "DOCUMENT_QUESTION"

@@ -1,6 +1,10 @@
+# pyrefly: ignore [missing-import]
 import pytest
 from unittest.mock import MagicMock, AsyncMock
+# pyrefly: ignore [missing-import]
 from services.cache_service import CacheService
+# pyrefly: ignore [missing-import]
+from utils.collection_tracker import CollectionInitTracker
 
 @pytest.fixture
 def cache_service():
@@ -19,7 +23,7 @@ def cache_service():
         embedding_client=embedding_client,
         generation_client=generation_client,
         app_settings=Settings(),
-        initialized_collections=set()
+        initialized_collections=CollectionInitTracker()
     )
 
 @pytest.mark.asyncio

@@ -17,7 +17,7 @@ class AgentController(BaseController):
         embedding_client,
         template_parser,
         cohere_client=None,
-        initialized_collections: set = None,
+        initialized_collections=None,
         llm_semaphore=None,  # FIX-2: semaphore to cap concurrent LLM calls
     ):
         super().__init__()
@@ -40,7 +40,11 @@ class AgentController(BaseController):
         from models.SessionModel import SessionModel
         from controllers.NLPController import NLPController
 
-        _initialized_collections = initialized_collections if initialized_collections is not None else set()
+        if initialized_collections is not None:
+            _initialized_collections = initialized_collections
+        else:
+            from utils.collection_tracker import CollectionInitTracker
+            _initialized_collections = CollectionInitTracker()
 
         self.memory_service = MemoryService(
             db_client, vectordb_client, generation_client, embedding_client, template_parser, self.app_settings, _initialized_collections

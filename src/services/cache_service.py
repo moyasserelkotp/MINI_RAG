@@ -11,10 +11,10 @@ _CACHE_TTL_DEFAULT = 86_400
 
 logger = logging.getLogger(__name__)
 
-_COLLECTION_LOCKS: dict[str, asyncio.Lock] = {}
+from utils.collection_tracker import CollectionInitTracker
 
 class CacheService:
-    def __init__(self, vectordb_client, embedding_client, generation_client, app_settings, initialized_collections: set):
+    def __init__(self, vectordb_client, embedding_client, generation_client, app_settings, initialized_collections: CollectionInitTracker):
         self.vectordb_client = vectordb_client
         self.embedding_client = embedding_client
         self.generation_client = generation_client
@@ -29,8 +29,8 @@ class CacheService:
         col_name = self.get_cache_collection_name(project_id)
         if col_name in self._initialized_collections:
             return
-        
-        lock = _COLLECTION_LOCKS.setdefault(col_name, asyncio.Lock())
+
+        lock = await self._initialized_collections.get_lock(col_name)
         async with lock:
             if col_name in self._initialized_collections:
                 return
@@ -43,7 +43,6 @@ class CacheService:
                     do_reset=False
                 )
             self._initialized_collections.add(col_name)
-            _COLLECTION_LOCKS.pop(col_name, None)
 
     def build_cache_key(self, project_id: str, query: str) -> int:
         gen_model = getattr(

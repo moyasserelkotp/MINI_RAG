@@ -68,7 +68,13 @@ class AgentService:
         self.router = None  # Will be initialized per execution if tool registry changes
 
         threshold = getattr(self.app_settings, "AGENT_SCORE_THRESHOLD", 0.7)
-        self.evaluator = RetrievalEvaluator(self.llm_client, score_threshold=threshold)
+        enable_llm_eval = getattr(self.app_settings, "ENABLE_RETRIEVAL_EVALUATION", False)
+        self.evaluator = RetrievalEvaluator(
+            self.llm_client,
+            score_threshold=threshold,
+            llm_semaphore=self.llm_semaphore,
+            enable_llm_eval=enable_llm_eval,
+        )
         self.rewriter = QueryRewriter(self.llm_client, self.llm_semaphore)
 
     # -----------------------------------------------------------------
@@ -238,7 +244,7 @@ class AgentService:
                         use_cache=True
                     )
                 except Exception as e:
-                    logger.error(f"Failed to set semantic cache in agent: {e}")
+                    logger.error("Failed to set semantic cache in agent [%s]: %s", type(e).__name__, e)
 
             return {
                 "answer": final_state.get("final_answer"),
@@ -248,7 +254,7 @@ class AgentService:
             }
 
         except Exception as e:
-            logger.error(f"Agent execution failed: {e}", exc_info=True)
+            logger.error("Agent execution failed [%s]: %s", type(e).__name__, e, exc_info=True)
             await self.agent_run_model.update_agent_run(run_id, {
                 "status": "failed",
                 "error": str(e),
