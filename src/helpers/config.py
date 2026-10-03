@@ -59,6 +59,16 @@ class Settings(BaseSettings):
             return [k.strip() for k in v if isinstance(k, str)]
         return v
 
+    @validator("API_KEYS", always=True)
+    def _require_keys_when_auth_enabled(cls, v, values):
+        """Fail fast at startup if auth is on but no keys are configured."""
+        if values.get("ENABLE_AUTH") and not v:
+            raise ValueError(
+                "ENABLE_AUTH=True but API_KEYS is empty. "
+                "Set API_KEYS in your .env file or disable auth with ENABLE_AUTH=False."
+            )
+        return v
+
     # MongoDB 
     MONGODB_URL: str
     MONGODB_DATABASE: str
@@ -172,7 +182,7 @@ class Settings(BaseSettings):
 
     #  Celery / RabbitMQ 
     RABBITMQ_DEFAULT_USER: str = "minirag"
-    RABBITMQ_DEFAULT_PASS: str = "minirag_rabbit_2222"
+    RABBITMQ_DEFAULT_PASS: Optional[str] = None  # REQUIRED in production — set via env var
     RABBITMQ_HOST: str = "rabbitmq"
     RABBITMQ_PORT: str = "5672"
     RABBITMQ_VHOST: str = "minirag_vhost"
@@ -180,9 +190,10 @@ class Settings(BaseSettings):
     # Celery / Redis 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: str = "6379"
-    REDIS_PASSWORD: str = "minirag_redis_2222"
+    REDIS_PASSWORD: Optional[str] = None  # REQUIRED in production — set via env var
     REDIS_CELERY_DB: str = "1"   # DB index for Celery results
     REDIS_CACHE_DB: str = "0"    # DB index for app-level cache
+    REDIS_RATE_LIMIT_DB: str = "2"  # DB index for rate-limiter (slowapi)
 
     # CORS 
     CORS_ALLOWED_ORIGINS: Union[List[str], str] = []

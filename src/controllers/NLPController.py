@@ -1,5 +1,6 @@
 from stores.llm.templates import template_parser
 import hashlib
+import weakref
 from .BaseController import BaseController
 from models.db_schemes import Project, DataChunk
 from stores.llm.LLMEnums import DocumentTypeEnum
@@ -37,7 +38,7 @@ class RAGResult:
     cached: bool
 
 
-_BACKGROUND_TASKS: set = set()
+_BACKGROUND_TASKS: weakref.WeakSet = weakref.WeakSet()
 
 
 def _safe_task_callback(label: str):
@@ -455,21 +456,17 @@ class NLPController(BaseController):
         """Fire all post-generation memory persistence tasks."""
         is_negative = "cannot answer" in answer.lower() or "not contain the answer" in answer.lower()
 
-        # 1. Semantic cache write
+        # 1. Semantic cache write — routed through CacheService for consistent
+        #    metadata structure (fixes H-4: TTL never fired due to key mismatch)
         if use_cache and not is_negative:
             try:
-                import time as _time
-                cache_ttl = getattr(self.app_settings, "SEMANTIC_CACHE_TTL_SECONDS", 86_400)
-                cache_id = self.cache_service.build_cache_key(project.project_id, search_query)
-                cache_col_name = self.cache_service.get_cache_collection_name(project.project_id)
                 task = asyncio.create_task(
-                    asyncio.to_thread(
-                        self.vectordb_client.insert_one,
-                        collection_name=cache_col_name,
-                        text=search_query,
-                        vector=cache_vec,
-                        metadata={"answer": answer, "expires_at": _time.time() + cache_ttl},
-                        record_id=cache_id,
+                    self.cache_service.set_semantic_cache(
+                        project_id=project.project_id,
+                        query=search_query,
+                        cache_vec=cache_vec,
+                        answer=answer,
+                        use_cache=True,
                     )
                 )
                 _BACKGROUND_TASKS.add(task)
@@ -512,14 +509,21 @@ class NLPController(BaseController):
         session_id: Optional[str] = None,
         metadata_filter: Optional[dict] = None,
     ):
-        """Run the RAG pipeline and yield LLM tokens one-by-one (async generator)."""
+        """Run the RAG pipeline and yield LLM tokens one-by-one (async generator).
+
+        All yields are ``str`` — never dicts — so consumers can safely do::
+
+            async for chunk in controller.answer_rag_stream(...):
+                send(chunk)
+        """
         import asyncio
         is_early, data = await self._prepare_rag_context(
             project, query, limit, use_hybrid, score_threshold, True, session_id, metadata_filter, None
         )
         if is_early:
             if "error" in data:
-                yield data
+                # H-3: yield str, not dict
+                yield "[ERROR] Embedding failed — cannot answer the query."
                 return
             if "cached_answer" in data:
                 yield data["cached_answer"]
@@ -546,7 +550,8 @@ class NLPController(BaseController):
                     yield token
             except Exception as exc:
                 logger.error("Streaming generation failed: %s", exc)
-                yield {"error": f"Error during streaming: {exc}"}
+                # H-3: yield str error, not dict
+                yield f"[ERROR] Streaming failed: {exc}"
                 return
         else:
             try:
@@ -557,7 +562,8 @@ class NLPController(BaseController):
                     yield full_answer
                     collected = [full_answer]
             except Exception as exc:
-                yield {"error": str(exc)}
+                # H-3: yield str error, not dict
+                yield f"[ERROR] Generation failed: {exc}"
                 return
 
         if collected:
@@ -584,3 +590,4 @@ class NLPController(BaseController):
                 use_summary=data["use_summary"],
                 search_query=data["search_query"],
             )
+

@@ -10,7 +10,7 @@ settings = get_settings()
 # limits are enforced globally, not per-process.
 # Falls back to in-memory storage if Redis is not reachable (safe for local dev).
 _redis_uri = (
-    f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/2"
+    f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_RATE_LIMIT_DB}"
     if settings.REDIS_HOST and settings.REDIS_PASSWORD
     else None
 )

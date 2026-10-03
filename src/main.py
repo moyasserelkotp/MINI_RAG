@@ -1,16 +1,5 @@
-"""
-MINI-RAG — Application entry point.
-
-Responsibilities:
-  - Configure logging
-  - Define the FastAPI lifespan (startup / shutdown)
-  - Register middleware (auth, CORS, rate-limit, request-ID, Prometheus)
-  - Mount all routers
-"""
 import asyncio
-# pyrefly: ignore [missing-import]
 import logging
-from contextlib import asynccontextmanager
 # pyrefly: ignore [missing-import]
 from fastapi import FastAPI
 # pyrefly: ignore [missing-import]
@@ -23,6 +12,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 # pyrefly: ignore [missing-import]
 from starlette.middleware.base import BaseHTTPMiddleware
+from contextlib import asynccontextmanager
 
 from helpers.config import get_settings
 from middleware.auth import api_key_middleware
@@ -102,11 +92,7 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("Could not initialise Cohere client: %s", exc)
 
-    # Shared per-worker state
-    # CRITICAL-1 FIX: use a lock-protected tracker instead of a bare set.
-    # Within a single Uvicorn worker all coroutines share this instance;
-    # the internal asyncio.Lock prevents concurrent coroutines from racing.
-    # Each worker starts fresh (expected) — idempotent create_collection() in
+
     # each service makes this safe across workers too.
     from utils.collection_tracker import CollectionInitTracker
     app.initialized_collections = CollectionInitTracker()
@@ -236,3 +222,12 @@ except Exception as exc:
 
 
 
+"""
+MINI-RAG — Application entry point.
+
+Responsibilities:
+  - Configure logging
+  - Define the FastAPI lifespan (startup / shutdown)
+  - Register middleware (auth, CORS, rate-limit, request-ID, Prometheus)
+  - Mount all routers
+"""

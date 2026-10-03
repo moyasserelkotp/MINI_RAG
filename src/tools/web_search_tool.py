@@ -70,10 +70,10 @@ class WebSearchTool(BaseTool):
             return {"error": "Missing required parameter: query"}
 
         if not self._settings.TAVILY_API_KEY:
-            return {"error": "TAVILY_API_KEY is not set in the configuration or .env file."}
+            return {"error": "Web search is currently unavailable."}  # M-7: hide config detail
 
         if self._client is None:
-            return {"error": "tavily-python package is not installed. Run: pip install tavily-python"}
+            return {"error": "Web search is currently unavailable."}  # M-7: hide install detail
 
         max_results = min(int(kwargs.get("max_results", self._max_results)), 10)
 

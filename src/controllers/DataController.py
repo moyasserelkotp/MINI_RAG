@@ -5,6 +5,9 @@ from fastapi import UploadFile
 from models import ResponseSignal
 import re
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Map known MIME types to their canonical extension
 _MIME_TO_EXT = {
@@ -15,15 +18,34 @@ _MIME_TO_EXT = {
 }
 
 
+def _detect_magic_ext(file_header: bytes) -> str:
+    """Return the canonical extension detected from file magic bytes, or '' on failure."""
+    try:
+        # pyrefly: ignore [missing-import]
+        import magic  # python-magic
+        detected_mime = magic.from_buffer(file_header, mime=True)
+        return _MIME_TO_EXT.get(detected_mime, "")
+    except ImportError:
+        logger.warning(
+            "python-magic is not installed — magic-byte validation skipped. "
+            "Run: pip install python-magic"
+        )
+        return ""
+    except Exception as exc:
+        logger.warning("Magic-byte detection failed: %s", exc)
+        return ""
+
 class DataController(BaseController):
 
     def __init__(self):
         super().__init__()
 
-    def validate_uploaded_file(self, file: UploadFile):
+    def validate_uploaded_file(self, file: UploadFile, file_header: bytes = b""):
         """Return ``(is_valid, signal)`` for the supplied file.
 
-        Checks both the file extension AND MIME type against the allow-list.
+        Checks file extension, MIME type, AND magic bytes (H-1) against the
+        allow-list. ``file_header`` should be the first 512 bytes of the file
+        content read by the route before calling this method.
         FILE_MAX_SIZE in .env is already in bytes — no extra scaling applied.
         """
         allowed: list = self.app_settings.FILE_ALLOWED_TYPES or []
@@ -36,7 +58,17 @@ class DataController(BaseController):
         raw_mime = (file.content_type or "").lower().split(";")[0].strip()
         mime_ext = _MIME_TO_EXT.get(raw_mime, raw_mime)
 
-        if ext not in allowed and mime_ext not in allowed:
+        #  Magic-byte check — server-side truth, overrides client claims (H-1) 
+        magic_ext = _detect_magic_ext(file_header) if file_header else ""
+
+        # Accept if ANY of: extension OR mime OR magic matches the allow-list.
+        # Magic-byte check is the most reliable; the others are fallbacks for
+        # environments where python-magic is unavailable.
+        ext_ok = ext in allowed
+        mime_ok = mime_ext in allowed
+        magic_ok = magic_ext in allowed if magic_ext else ext_ok  # graceful fallback
+
+        if not (ext_ok or mime_ok or magic_ok):
             return False, ResponseSignal.FILE_TYPE_NOT_SUPPORTED.value
 
         #  size check (FILE_MAX_SIZE is already bytes in .env) 
@@ -59,9 +91,14 @@ class DataController(BaseController):
         return new_file_path, f"{random_key}_{cleaned}"
 
     def get_clean_file_name(self, orig_file_name: str) -> str:
-        # Keep only word characters and dots; replace spaces with underscore
-        cleaned = re.sub(r"[^\w.]", "", orig_file_name.strip())
+        # H-5: restrict to safe ASCII chars only; remove Unicode word chars
+        # that can combine into path-relevant sequences on some locales.
+        cleaned = re.sub(r"[^a-zA-Z0-9_.\-]", "", orig_file_name.strip())
         cleaned = cleaned.replace(" ", "_")
+        # Strip leading dots to prevent hidden-file names (e.g. "..txt" → "txt")
+        cleaned = cleaned.lstrip(".")
+        if not cleaned:
+            cleaned = "unnamed_file"
         if len(cleaned) > 100:
             parts = cleaned.rsplit(".", 1)
             if len(parts) == 2:
@@ -70,6 +107,7 @@ class DataController(BaseController):
             else:
                 cleaned = cleaned[:100]
         return cleaned
+
 
     def delete_file_by_name(self, project_id: str, file_id: str) -> bool:
         """Remove the physical file from the project folder.

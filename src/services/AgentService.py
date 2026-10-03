@@ -92,16 +92,11 @@ class AgentService:
         Executes the agentic RAG workflow.
         """
         if not run_id:
+            # run_id should always be provided by the caller (AgentController).
+            # Generate a fallback UUID but do NOT create a DB record here to
+            # avoid duplicate AgentRun documents (H-2 fix).
             run_id = str(uuid.uuid4())
-            # For standalone/fallback execution, create it here
-            agent_run = AgentRun(
-                run_id=run_id,
-                project_id=project.id,
-                session_id=session_id,
-                status="running",
-                query=query
-            )
-            await self.agent_run_model.create_agent_run(agent_run)
+            logger.warning("AgentService.execute_agent called without run_id — generated %s", run_id)
 
         try:
             agent_mode = getattr(self.app_settings, "AGENT_MODE", "FULL_AGENT")
@@ -261,4 +256,14 @@ class AgentService:
                 "finished_at": datetime.now(timezone.utc)
             })
             record_agent_run("UNKNOWN", "failed")
-            raise
+            # M-6: raise a structured HTTP error instead of raw exception
+            # so FastAPI returns a consistent JSON body to the client.
+            try:
+                # pyrefly: ignore [missing-import]
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=500,
+                    detail={"error": "Agent execution failed", "type": type(e).__name__}
+                ) from e
+            except ImportError:
+                raise

@@ -12,6 +12,7 @@ Usage in a logger:
     logger.info("Processing started", extra={"request_id": get_request_id()})
 """
 import uuid
+import re
 import logging
 from contextvars import ContextVar
 # pyrefly: ignore [missing-import]
@@ -43,15 +44,16 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         incoming = request.headers.get(HEADER_NAME, "")
 
-        # Validate / truncate client-supplied IDs to prevent huge header abuse.
-        if incoming and len(incoming) <= _MAX_REQUEST_ID_LENGTH:
-            request_id = incoming
+        # Validate / truncate client-supplied IDs.
+        # M-4: also strip non-printable chars to prevent log injection.
+        if incoming:
+            sanitized = re.sub(r"[^\x20-\x7E]", "", incoming)[:_MAX_REQUEST_ID_LENGTH]
         else:
-            if incoming:
-                logger.debug(
-                    "Ignoring oversized X-Request-ID header (%d chars); generating new ID",
-                    len(incoming),
-                )
+            sanitized = ""
+
+        if sanitized:
+            request_id = sanitized
+        else:
             request_id = str(uuid.uuid4())
 
         # Store in context so downstream code can access it without thread-locals.

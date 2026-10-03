@@ -45,3 +45,4 @@ langchain-core>=0.2.27
 langchain-experimental>=0.0.60
 langgraph>=0.2.5
 tavily-python>=0.5.0
+python-magic>=0.4.27   # H-1: server-side magic-byte file type validation
